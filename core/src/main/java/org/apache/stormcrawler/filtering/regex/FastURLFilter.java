@@ -37,6 +37,7 @@ import org.apache.stormcrawler.JSONResource;
 import org.apache.stormcrawler.Metadata;
 import org.apache.stormcrawler.filtering.URLFilter;
 import org.apache.stormcrawler.util.ConfUtils;
+import org.apache.stormcrawler.util.URLUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -211,7 +212,7 @@ class Rules {
      * @throws MalformedURLException
      */
     public boolean filter(String url, Metadata metadata) throws MalformedURLException {
-        URL u = new URL(url);
+        URL u = URLUtil.toURL(url);
 
         // first try the full hostname
         String hostname = u.getHost();

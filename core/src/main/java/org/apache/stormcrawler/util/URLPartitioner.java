@@ -58,9 +58,9 @@ public class URLPartitioner {
         if (partitionKey == null) {
             URL u;
             try {
-                u = new URL(url);
+                u = URLUtil.toURL(url);
                 host = u.getHost();
-            } catch (MalformedURLException e1) {
+            } catch (MalformedURLException e) {
                 LOG.warn("Invalid URL: {}", url);
                 return null;
             }

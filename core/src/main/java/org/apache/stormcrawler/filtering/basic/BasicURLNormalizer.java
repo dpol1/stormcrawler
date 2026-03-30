@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import java.net.IDN;
 import java.net.MalformedURLException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +40,7 @@ import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.stormcrawler.Metadata;
 import org.apache.stormcrawler.filtering.URLFilter;
+import org.apache.stormcrawler.util.URLUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -120,7 +122,11 @@ public class BasicURLNormalizer extends URLFilter {
         }
 
         try {
-            URL theUrl = new URL(urlToFilter);
+            URL theUrl = URLUtil.toURL(urlToFilter);
+            // sync the string with what the parser produced — this ensures
+            // illegal characters (pipes, backslashes, %uXXXX, etc.) that were
+            // sanitized during toURL() are reflected in the string we work with
+            urlToFilter = theUrl.toExternalForm();
             String file = theUrl.getFile();
             String protocol = theUrl.getProtocol();
             String host = theUrl.getHost();
@@ -152,17 +158,27 @@ public class BasicURLNormalizer extends URLFilter {
                 hasChanged = true;
             }
             if (hasChanged) {
-                urlToFilter = new URL(protocol, host, port, file2).toString();
+                URI uri =
+                        new URI(
+                                protocol,
+                                null, // userInfo
+                                host,
+                                port,
+                                file2, // path
+                                null, // query
+                                null // fragment
+                                );
+                urlToFilter = uri.toString();
             }
-        } catch (MalformedURLException e) {
+        } catch (MalformedURLException | URISyntaxException e) {
             return null;
         }
 
         if (checkValidUri) {
             try {
-                URI uri = URI.create(urlToFilter);
+                URI uri = URLUtil.toURI(urlToFilter);
                 urlToFilter = uri.normalize().toString();
-            } catch (java.lang.IllegalArgumentException e) {
+            } catch (MalformedURLException e) {
                 LOG.info("Invalid URI {} from {} ", urlToFilter, originalURL);
                 return null;
             }
@@ -223,7 +239,7 @@ public class BasicURLNormalizer extends URLFilter {
         try {
             // Handle illegal characters by making a url first
             // this will clean illegal characters like |
-            final URL url = new URL(urlToFilter);
+            final URL url = URLUtil.toURL(urlToFilter);
 
             String query = url.getQuery();
             String path = url.getPath();
@@ -288,7 +304,7 @@ public class BasicURLNormalizer extends URLFilter {
                     + ((s = url.getRef()) != null ? '#' + s : "");
 
         } catch (MalformedURLException e) {
-            LOG.warn("Invalid urlToFilter {}. {}", urlToFilter, e);
+            LOG.warn("Invalid urlToFilter {}.", urlToFilter, e);
             return null;
         }
     }

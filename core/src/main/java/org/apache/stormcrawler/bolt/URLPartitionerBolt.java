@@ -36,6 +36,7 @@ import org.apache.storm.tuple.Values;
 import org.apache.stormcrawler.Constants;
 import org.apache.stormcrawler.Metadata;
 import org.apache.stormcrawler.util.ConfUtils;
+import org.apache.stormcrawler.util.URLUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,7 +83,7 @@ public class URLPartitionerBolt extends BaseRichBolt {
         if (partitionKey == null) {
             URL u;
             try {
-                u = new URL(url);
+                u = URLUtil.toURL(url);
                 host = u.getHost();
             } catch (MalformedURLException e1) {
                 eventCounter.scope("Invalid URL").incrBy(1);

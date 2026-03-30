@@ -29,13 +29,13 @@ Black arrows show the *main data flow*, gray arrows represent URLs *taken from t
 
 The crawl begins with the *Frontier*, which is responsible for scheduling,
 prioritization, politeness, and retry logic. URLs are emitted by a
-`FrontierSpout` and partitioned by the `URLPartitioner`, typically using the
+`Spout` (e.g., `AggregationSpout`, `SQLSpout`) and partitioned by the `URLPartitioner`, typically using the
 host as a key to enforce politeness constraints.
 
 The `Fetcher` retrieves web resources and emits both the fetched content and
 associated metadata such as HTTP status codes, headers, and MIME types. Based
 on the content type, documents are routed to specialized parsers, including
-`SiteMapParser`, `JSoupParser` for HTML content, and `TikaParser` for binary
+`SiteMapParser`, `JSoupParser` for HTML content, and `ParserBolt` (Tika module) for binary
 formats via Apache Tika.
 
 Parsed content is then sent to the `Indexer` and persisted by the `Storage`
@@ -74,7 +74,7 @@ They allow fine-grained control over how extracted data and outgoing links are
 processed.
 
 Parse Filters are applied within the parsing bolts, following parsing by
-`SiteMapParser`, `JSoupParser`, or `TikaParser`. They can modify extracted text,
+`SiteMapParser`, `JSoupParser`, or `ParserBolt` (Tika). They can modify extracted text,
 metadata, and links before the content is indexed or new URLs are emitted.
 
 Common Parse Filters include:

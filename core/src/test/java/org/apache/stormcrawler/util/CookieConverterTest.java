@@ -308,7 +308,7 @@ class CookieConverterTest {
 
     private URL getUrl(String urlString) {
         try {
-            return new URL(urlString);
+            return URLUtil.toURL(urlString);
         } catch (MalformedURLException e) {
             return null;
         }

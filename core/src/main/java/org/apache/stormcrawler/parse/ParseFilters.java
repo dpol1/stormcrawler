@@ -23,7 +23,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +38,7 @@ import org.apache.storm.utils.Utils;
 import org.apache.stormcrawler.JSONResource;
 import org.apache.stormcrawler.util.ConfUtils;
 import org.apache.stormcrawler.util.Configurable;
+import org.apache.stormcrawler.util.URLUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -187,7 +187,7 @@ public class ParseFilters extends ParseFilter implements JSONResource {
 
         String url = cmd.getArgs()[0];
 
-        byte[] content = IOUtils.toByteArray((new URL(url)).openStream());
+        byte[] content = IOUtils.toByteArray(URLUtil.toURL(url).openStream());
 
         Document doc = Jsoup.parse(new String(content, StandardCharsets.UTF_8), url);
 

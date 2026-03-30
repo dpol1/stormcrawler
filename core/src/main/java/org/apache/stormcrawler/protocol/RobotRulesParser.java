@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
 import javax.security.auth.login.Configuration;
 import org.apache.storm.Config;
 import org.apache.stormcrawler.util.ConfUtils;
+import org.apache.stormcrawler.util.URLUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -200,7 +201,7 @@ public abstract class RobotRulesParser {
     public BaseRobotRules getRobotRulesSet(Protocol protocol, String url) {
         URL u;
         try {
-            u = new URL(url);
+            u = URLUtil.toURL(url);
         } catch (Exception e) {
             return EMPTY_RULES;
         }

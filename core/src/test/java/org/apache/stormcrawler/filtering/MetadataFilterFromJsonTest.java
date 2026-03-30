@@ -21,6 +21,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Map;
 import org.apache.stormcrawler.Metadata;
+import org.apache.stormcrawler.util.URLUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +35,7 @@ class MetadataFilterFromJsonTest {
     @Test
     void testFilterNoMD() throws MalformedURLException {
         URLFilters filter = createURLFilters("test.metadata.1.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         Metadata metadata = new Metadata();
         String filterResult = filter.filter(url, metadata, url.toExternalForm());
         Assertions.assertEquals(url.toExternalForm(), filterResult);
@@ -43,7 +44,7 @@ class MetadataFilterFromJsonTest {
     @Test
     void testFilterHit() throws MalformedURLException {
         URLFilters filter = createURLFilters("test.metadata.1.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         Metadata metadata = new Metadata();
         metadata.addValue("key", "val");
         String filterResult = filter.filter(url, metadata, url.toExternalForm());
@@ -53,7 +54,7 @@ class MetadataFilterFromJsonTest {
     @Test
     void testFilterNoHit() throws MalformedURLException {
         URLFilters filter = createURLFilters("test.metadata.1.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         Metadata metadata = new Metadata();
         metadata.addValue("key", "val2");
         metadata.addValue("key", "val3");
@@ -65,7 +66,7 @@ class MetadataFilterFromJsonTest {
     @Test
     void testNewFilterWithEmptyFilterAndNullMetadata() throws MalformedURLException {
         URLFilters filter = createURLFilters("test.metadata.2.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         String filterResult = filter.filter(url, null, url.toExternalForm());
         Assertions.assertEquals(url.toExternalForm(), filterResult);
     }
@@ -73,7 +74,7 @@ class MetadataFilterFromJsonTest {
     @Test
     void testNewFilterWithEmptyFilterAndEmptyMetadata() throws MalformedURLException {
         URLFilters filter = createURLFilters("test.metadata.2.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         Metadata metadata = new Metadata();
         String filterResult = filter.filter(url, metadata, url.toExternalForm());
         Assertions.assertEquals(url.toExternalForm(), filterResult);
@@ -82,7 +83,7 @@ class MetadataFilterFromJsonTest {
     @Test
     void testNewFilterWithEmptyMetadata() throws MalformedURLException {
         URLFilters filter = createURLFilters("test.metadata.2.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         Metadata metadata = new Metadata();
         String filterResult = filter.filter(url, metadata, url.toExternalForm());
         Assertions.assertEquals(url.toExternalForm(), filterResult);
@@ -92,7 +93,7 @@ class MetadataFilterFromJsonTest {
     void testNewFilterWithOnlyOneMatchingANDFilter() throws MalformedURLException {
         // Filter if key=>val AND key2=>val2 match
         URLFilters filter = createURLFilters("test.metadata.2.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         Metadata metadata = new Metadata();
         metadata.addValue("key", "val");
         String filterResult = filter.filter(url, metadata, url.toExternalForm());
@@ -103,7 +104,7 @@ class MetadataFilterFromJsonTest {
     void testNewFilterWithAllMatchingANDFilter() throws MalformedURLException {
         // Filter if key=>val AND key2=>val2 match
         URLFilters filter = createURLFilters("test.metadata.2.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
         Metadata metadata = new Metadata();
         metadata.addValue("key", "val");
         metadata.addValue("key2", "val2");
@@ -115,7 +116,7 @@ class MetadataFilterFromJsonTest {
     void testNewFilterWithComplexFilter() throws MalformedURLException {
         // Filter if key=>val AND (key2=>val2 OR key3=>val3) match
         URLFilters filter = createURLFilters("test.metadata.3.urlfilters.json");
-        URL url = new URL("http://www.sourcedomain.com/");
+        URL url = URLUtil.toURL("http://www.sourcedomain.com/");
 
         Metadata metadata = new Metadata();
         metadata.addValue("key", "val");

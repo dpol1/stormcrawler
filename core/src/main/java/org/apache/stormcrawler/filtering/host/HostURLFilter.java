@@ -24,6 +24,7 @@ import java.net.URL;
 import java.util.Map;
 import org.apache.stormcrawler.Metadata;
 import org.apache.stormcrawler.filtering.URLFilter;
+import org.apache.stormcrawler.util.URLUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -82,7 +83,7 @@ public class HostURLFilter extends URLFilter {
 
         URL url;
         try {
-            url = new URL(urlToFilter);
+            url = URLUtil.toURL(urlToFilter);
         } catch (MalformedURLException e1) {
             return null;
         }

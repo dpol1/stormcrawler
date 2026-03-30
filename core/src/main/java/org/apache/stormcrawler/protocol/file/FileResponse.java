@@ -32,6 +32,7 @@ import org.apache.http.HttpHeaders;
 import org.apache.http.HttpStatus;
 import org.apache.stormcrawler.Metadata;
 import org.apache.stormcrawler.protocol.ProtocolResponse;
+import org.apache.stormcrawler.util.URLUtil;
 import org.slf4j.LoggerFactory;
 
 public class FileResponse {
@@ -51,7 +52,7 @@ public class FileResponse {
         content = new byte[0];
         statusCode = HttpStatus.SC_INTERNAL_SERVER_ERROR;
 
-        URL url = new URL(u);
+        URL url = URLUtil.toURL(u);
 
         if (!url.getPath().equals(url.getFile())) {
             LOG.warn("url.getPath() != url.getFile(): {}.", url);

@@ -82,7 +82,7 @@ config:
   metadata.track.path: true
   metadata.track.depth: true
 
-  # Agent name info - given here as an example. Do not be an anonynmous coward, use your real information!
+  # Agent name info - given here as an example. Do not be an anonymous coward, use your real information!
   # The full user agent value sent as part of the HTTP requests
   # is built from the elements below. Only the agent.name is mandatory,
   # it is also used to parse the robots.txt directives.
@@ -269,7 +269,7 @@ config:
 
   # Guava cache use by AbstractStatusUpdaterBolt for DISCOVERED URLs
   status.updater.use.cache: true
-  status.updater.cache.spec: "maximumSize=10000,expireAfterAccess=1h"
+  status.updater.cache.spec: "expireAfterAccess=1h,softValues"
 
   # Can also take "MINUTE" or "HOUR"
   status.updater.unit.round.date: "SECOND"

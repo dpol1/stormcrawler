@@ -61,6 +61,7 @@ import org.apache.stormcrawler.protocol.ProtocolResponse;
 import org.apache.stormcrawler.protocol.RobotRules;
 import org.apache.stormcrawler.util.ConfUtils;
 import org.apache.stormcrawler.util.PerSecondReducer;
+import org.apache.stormcrawler.util.URLUtil;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -529,7 +530,7 @@ public class FetcherBolt extends StatusEmitterBolt {
                 boolean asap = false;
 
                 try {
-                    URL url = new URL(fit.url);
+                    URL url = URLUtil.toURL(fit.url);
                     Protocol protocol = protocolFactory.getProtocol(url);
 
                     if (protocol == null) {
@@ -982,7 +983,7 @@ public class FetcherBolt extends StatusEmitterBolt {
         URL url;
 
         try {
-            url = new URL(urlString);
+            url = URLUtil.toURL(urlString);
         } catch (MalformedURLException e) {
             LOG.error("{} is a malformed URL", urlString);
 

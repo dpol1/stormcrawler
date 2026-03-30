@@ -287,7 +287,7 @@ public abstract class AbstractIndexerBolt extends BaseRichBolt {
         }
 
         try {
-            URL url1 = new URL(url);
+            URL url1 = URLUtil.toURL(url);
             URL canonical = URLUtil.resolveUrl(url1, canonicalValue);
 
             String domain = PaidLevelDomain.getPLD(url1.getHost());

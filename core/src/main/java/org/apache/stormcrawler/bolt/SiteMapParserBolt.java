@@ -61,6 +61,7 @@ import org.apache.stormcrawler.parse.ParseResult;
 import org.apache.stormcrawler.persistence.DefaultScheduler;
 import org.apache.stormcrawler.persistence.Status;
 import org.apache.stormcrawler.util.ConfUtils;
+import org.apache.stormcrawler.util.URLUtil;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -183,7 +184,7 @@ public class SiteMapParserBolt extends StatusEmitterBolt {
             String url, byte[] content, String contentType, Metadata parentMetadata)
             throws UnknownFormatException, IOException {
 
-        URL url1 = new URL(url);
+        URL url1 = URLUtil.toURL(url);
         long start = System.currentTimeMillis();
         AbstractSiteMap siteMap;
         // let the parser guess what the mimetype is

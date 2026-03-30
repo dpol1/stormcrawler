@@ -52,6 +52,7 @@ import org.apache.stormcrawler.parse.ParseResult;
 import org.apache.stormcrawler.persistence.Status;
 import org.apache.stormcrawler.protocol.ProtocolResponse;
 import org.apache.stormcrawler.util.ConfUtils;
+import org.apache.stormcrawler.util.URLUtil;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.InputSource;
 
@@ -175,7 +176,7 @@ public class FeedParserBolt extends StatusEmitterBolt {
             feed = input.build(new InputSource(is));
         }
 
-        URL url1 = new URL(url);
+        URL url1 = URLUtil.toURL(url);
 
         List<SyndEntry> entries = feed.getEntries();
         for (SyndEntry entry : entries) {

@@ -96,9 +96,9 @@ The **SCProxy** class contains all of the information associated with proxy conn
 
 ==== Registering Metadata for Kryo Serialization
 
-If your Apache StormCrawler topology doesn't extend `org.apache.storm.crawler.ConfigurableTopology`, you will need to manually register StormCrawler's `Metadata` class for serialization in Storm. For more information on Kryo serialization in Apache Storm, you can refer to the link:https://storm.apache.org/documentation/Serialization.html[documentation].
+If your Apache StormCrawler topology doesn't extend `org.apache.stormcrawler.ConfigurableTopology`, you will need to manually register StormCrawler's `Metadata` class for serialization in Storm. For more information on Kryo serialization in Apache Storm, you can refer to the link:https://storm.apache.org/documentation/Serialization.html[documentation].
 
-To register `Metadata` for serialization, you'll need to import `backtype.storm.Config` and `org.apache.storm.crawler.Metadata`. Then, in your topology class, you'll register the class with:
+To register `Metadata` for serialization, you'll need to import `org.apache.storm.Config` and `org.apache.stormcrawler.Metadata`. Then, in your topology class, you'll register the class with:
 
 [source,java]
 ----
@@ -112,7 +112,7 @@ Alternatively, you can specify in the configuration file:
 [source,yaml]
 ----
 topology.kryo.register:
-  - org.apache.storm.crawler.Metadata
+  - org.apache.stormcrawler.Metadata
 ----
 
 ==== MetadataTransfer
@@ -164,8 +164,7 @@ features you are using in your Apache StormCrawler topology. Some external modul
 |===
 | key | default value | description
 
-| fetcher.max.crawl.delay | 30 | The maximum number in seconds that will be accepted by Crawl-delay
-directives in robots.txt files. If the crawl-delay exceeds this value the behavior depends on the value of fetcher.max.crawl.delay.force.
+| fetcher.max.crawl.delay | 30 | Maximum accepted Crawl-delay from robots.txt (seconds). If the crawl-delay exceeds this value the behavior depends on the value of fetcher.max.crawl.delay.force.
 | fetcher.max.crawl.delay.force | false | Configures the behavior of fetcher if the robots.txt crawl-delay exceeds fetcher.max.crawl.delay. If false: the tuple is emitted to the StatusStream
 as an ERROR. If true: the queue delay is set to fetcher.max.crawl.delay.
 | fetcher.max.queue.size | -1 | The maximum length of the queue used to store items to be fetched by the FetcherBolt. A setting of -1 sets the length to Integer.MAX_VALUE.
@@ -180,6 +179,7 @@ is defined.
 | fetcher.server.min.delay | 0 | Delay between crawls for queues with >1 thread. Ignores robots.txt.
 | fetcher.threads.number | 10 | Total concurrent threads fetching pages. Adjust carefully based on system capacity.
 | fetcher.threads.per.queue | 1 | Default number of threads per queue. Can be overridden.
+| fetcher.threads.start.delay | 10 | Delay (milliseconds) between starting next fetcher thread. Avoids overloading DNS or network resources during fetcher startup when all threads simultaneously start requesting pages.
 | fetcher.timeout.queue | -1 | Maximum wait time (seconds) for items in the queue. -1 disables timeout.
 | fetcherbolt.queue.debug.filepath | "" | Path to a debug log (e.g. /tmp/fetcher-dump-{port}).
 | http.agent.description | - | Description for the User-Agent header.
@@ -196,20 +196,27 @@ implementation.
 | http.proxy.pass | - | Proxy password.
 | http.proxy.port | 8080 | Proxy port.
 | http.proxy.user | - | Proxy username.
-| http.robots.403.allow | true | Defines behavior when robots.txt returns HTTP 403.
+| http.retry.on.connection.failure | true | (OkHttp only) Retry fetching on connection failure. See link:https://square.github.io/okhttp/5.x/okhttp/okhttp3/-ok-http-client/-builder/retry-on-connection-failure.html[OkHttp docs].
+| http.robots.403.allow | true | Allow crawling when robots.txt returns HTTP 403.
+| http.robots.5xx.allow | false | Allow crawling when robots.txt returns a server error (5xx).
 | http.robots.agents | '' | Additional user-agent strings for interpreting robots.txt.
-| http.robots.file.skip | false | Ignore robots.txt rules (1.17+).
+| http.robots.content.limit | -1 | Maximum bytes to fetch for robots.txt. -1 uses http.content.limit.
+| http.robots.file.skip | false | Ignore robots.txt rules entirely.
+| http.robots.headers.skip | false | Ignore robots directives from HTTP headers.
+| http.robots.meta.skip | false | Ignore robots directives from HTML meta tags.
 | http.skip.robots | false | Deprecated (replaced by http.robots.file.skip).
+| robots.noFollow.strict | true | If true, remove all outlinks from pages marked as noFollow.
 | http.store.headers | false | Whether to store response headers.
-| http.store.responsetime | true | Not yet implemented — store response time in Metadata.
 | http.timeout | 10000 | Connection timeout (ms).
 | http.use.cookies | false | Use cookies in subsequent requests.
 | https.protocol.implementation | org.apache.stormcrawler.protocol.httpclient.HttpProtocol | HTTPS Protocol
 implementation.
 | partition.url.mode | byHost | Defines how URLs are partitioned: byHost, byDomain, or byIP.
-| protocols | http,https | Supported protocols.
-| redirections.allowed | true | Allow URL redirects.
+| protocols | http,https,file | Supported protocols.
+| redirections.allowed | true | If true, emit redirect target URLs as "outlinks" to the status stream. If false, do not follow redirects. See also `http.allow.redirects`.
+| http.allow.redirects | false | (OkHttp only) Follow HTTP redirects immediately in the HTTP protocol client. Note: if followed immediately, redirect target URLs are not emitted to the status stream, are not filtered, not deduplicated, and not checked against robots.txt.
 | sitemap.discovery | false | Enable automatic sitemap discovery.
+| urlbuffer.class | org.apache.stormcrawler.persistence.urlbuffer.SimpleURLBuffer | URL buffer implementation used by spouts.
 |===
 
 ==== Protocol
@@ -218,18 +225,22 @@ implementation.
 |===
 | key | default value | description
 
-| cacheConfigParamName | maximumSize=10000,expireAfterWrite=6h | CacheBuilder configuration for robots cache.
-| errorcacheConfigParamName | maximumSize=10000,expireAfterWrite=1h | CacheBuilder configuration for error cache.
+| file.protocol.implementation | org.apache.stormcrawler.protocol.file.FileProtocol | Protocol implementation for file:// URLs.
 | file.encoding | UTF-8 | Encoding for FileProtocol.
+| protocol.instances.num | 1 | Number of instances per protocol implementation.
+| http.protocol.versions | - | HTTP protocol versions in order of preference (h2, http/1.1, http/1.0, h2c). If empty, uses implementation defaults.
+| robots.cache.spec | maximumSize=10000,expireAfterWrite=6h | CacheBuilder configuration for robots cache.
+| robots.error.cache.spec | maximumSize=10000,expireAfterWrite=1h | CacheBuilder configuration for error cache.
+| okhttp.protocol.connection.pool.max.idle.connections | 5 | OkHttp maximum number of idle connections.
+| okhttp.protocol.connection.pool.connection.keep.alive | 300 | OkHttp connection keep-alive time (seconds).
 | http.custom.headers | - | Custom HTTP headers.
-| http.accept | - | HTTP Accept
+| http.accept | text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8 | HTTP Accept
 header.
-| http.accept.language | - | HTTP Accept-Language
+| http.accept.language | en-us,en-gb,en;q=0.7,*;q=0.3 | HTTP Accept-Language
 header.
 | http.content.partial.as.trimmed | false | Accepts partially fetched content in OKHTTP.
 | http.trust.everything | true | If true, trust all SSL/TLS connections.
-| navigationfilters.config.file | - | JSON config for NavigationFilter. See blog post
-.
+| navigationfilters.config.file | - | JSON config for NavigationFilter (used by the Selenium protocol module).
 | selenium.addresses | - | WebDriver server addresses.
 | selenium.capabilities | - | Desired WebDriver capabilities
 .
@@ -249,27 +260,31 @@ The values below are used by sub-classes of `AbstractIndexerBolt`.
 |===
 | key | default value | description
 
+| indexer.canonical.name | canonical | Metadata key for the canonical URL. Used to replace the URL with its canonical form before indexing.
+| indexer.ignore.empty.fields | false | If true, skip fields with empty values when indexing.
 | indexer.md.filter | - | YAML list of key=value filters for metadata-based indexing.
 | indexer.md.mapping | - | YAML mapping from metadata fields to persistence layer fields.
-| indexer.text.fieldname | - | Field name for indexed HTML body text.
-| indexer.url.fieldname | - | Field name for indexed URL.
+| indexer.text.fieldname | content | Field name for indexed HTML body text.
+| indexer.text.maxlength | -1 | Maximum length of text to index. -1 means no limit.
+| indexer.url.fieldname | url | Field name for indexed URL.
 |===
 
 ==== Status Persistence
 
-This refers to persisting the status of a URL (e.g. ERROR, DISCOVERED etc.) along with asomething like a `nextFetchDate`
+This refers to persisting the status of a URL (e.g. ERROR, DISCOVERED etc.) along with something like a `nextFetchDate`
 that is being calculated by a link:https://github.com/apache/stormcrawler/blob/main/core/src/main/java/org/apache/stormcrawler/persistence/DefaultScheduler.java[Scheduler].
 
 [cols="1,1,3", options="header"]
 |===
 | key | default value | description
 
-| fetchInterval.default | 1440 | Default revisit interval (minutes). Used by DefaultScheduler
-.
-| fetchInterval.error | 44640 | Revisit interval for error pages (minutes).
+| fetchInterval.default | 1440 | Default revisit interval (minutes). Used by DefaultScheduler.
+| fetchInterval.error | -1 | Revisit interval for error pages (minutes). -1 means never refetch.
 | fetchInterval.fetch.error | 120 | Revisit interval for fetch errors (minutes).
-| status.updater.cache.spec | maximumSize=10000, expireAfterAccess=1h | Cache specification
-.
+| max.fetch.errors | 3 | Maximum number of successive fetch errors before changing status to ERROR.
+| scheduler.class | org.apache.stormcrawler.persistence.DefaultScheduler | Scheduler implementation for computing next fetch dates. Use AdaptiveScheduler for change-rate-based intervals.
+| status.updater.cache.spec | maximumSize=10000, expireAfterAccess=1h | Cache specification for the status updater.
+| status.updater.unit.round.date | SECOND | Unit for rounding the next fetch date. Can also be MINUTE or HOUR.
 | status.updater.use.cache | true | Whether to use cache to avoid re-persisting URLs.
 |===
 
@@ -281,21 +296,25 @@ Configures parsing of fetched text and the handling of discovered URIs
 |===
 | key | default value | description
 
-| collections.file | collections.json | Config for CollectionTagger
-.
+| collections.file | collections.json | Config for CollectionTagger.
 | collections.key | collections | Key under which tags are stored in metadata.
+| detect.charset.maxlength | 10000 | Maximum number of bytes used for charset detection.
+| detect.mimetype | true | Enable MIME type detection during parsing.
 | feed.filter.hours.since.published | -1 | Discard feeds older than value hours.
 | feed.sniffContent | false | Try to detect feeds automatically.
-| parsefilters.config.file | parsefilters.json | Path to JSON config defining ParseFilters. See example
-.
+| jsoup.treat.non.html.as.error | true | If true, non-HTML content is treated as an error by JSoupParserBolt.
+| parsefilters.config.file | parsefilters.json | Path to JSON config defining ParseFilters. See link:https://github.com/apache/stormcrawler/blob/main/core/src/main/resources/parsefilters.json[default parsefilters.json].
 | parser.emitOutlinks | true | Emit discovered links as DISCOVERED tuples.
 | parser.emitOutlinks.max.per.page | -1 | Limit number of emitted links per page.
+| sitemap.filter.hours.since.modified | -1 | Filter URLs in sitemaps based on their modification date. -1 disables filtering.
+| sitemap.schedule.delay | -1 | Staggered scheduling delay for sitemaps (minutes). -1 disables staggering.
+| sitemap.extensions | - | Sitemap extensions to parse (IMAGE, LINKS, MOBILE, NEWS, VIDEO).
 | textextractor.exclude.tags | "" | HTML tags ignored by TextExtractor.
 | textextractor.include.pattern | "" | Regex patterns to include for TextExtractor.
 | textextractor.no.text | false | Disable text extraction entirely.
+| textextractor.skip.after | -1 | Stop text extraction after this many characters. -1 means no limit.
 | track.anchors | true | Add anchor text to outlink metadata.
-| urlfilters.config.file | urlfilters.json | JSON file defining URL filters. See default
-.
+| urlfilters.config.file | urlfilters.json | JSON file defining URL filters. See link:https://github.com/apache/stormcrawler/blob/main/archetype/src/main/resources/archetype-resources/src/main/resources/urlfilters.json[default urlfilters.json].
 |===
 
 ====  Metadata
@@ -312,5 +331,217 @@ minimising metadata clashes
 | metadata.track.path | true | Track URL path history in metadata.
 | metadata.transfer | - | Metadata to transfer to outlinks.
 | metadata.transfer.class | org.apache.stormcrawler.util.MetadataTransfer | Class handling metadata transfer.
-| protocol.md.prefix | - | Prefix for remote metadata keys to avoid collisions.
+| protocol.md.prefix | protocol. | Prefix for remote metadata keys to avoid collisions.
+|===
+
+=== External Module Configuration
+
+The following sections document configuration options for the external integration modules.
+Each module has its own Maven dependency and may require additional infrastructure (e.g., OpenSearch, Solr, a SQL database).
+For full setup instructions, see the README in each module's directory.
+
+==== OpenSearch
+
+Integration with link:https://opensearch.org/[OpenSearch] for indexing, URL status persistence, and metrics.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/opensearch[opensearch module] for full details.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| opensearch.addresses | - | OpenSearch server address(es).
+| opensearch.user | - | Username for authentication (optional).
+| opensearch.password | - | Password for authentication (optional).
+| opensearch.concurrentRequests | 2 | Number of concurrent bulk requests.
+| opensearch.indexer.index.name | content | Index name for crawled documents.
+| opensearch.indexer.create | false | Auto-create index if it does not exist.
+| opensearch.indexer.bulkActions | 100 | Number of documents to buffer before flushing.
+| opensearch.indexer.flushInterval | 2s | Maximum time before flushing the bulk buffer.
+| opensearch.indexer.pipeline | - | Ingest pipeline name (optional).
+| opensearch.status.index.name | status | Index name for URL status.
+| opensearch.status.bulkActions | 500 | Batch size for status updates.
+| opensearch.status.flushInterval | 5s | Flush interval for status updates.
+| opensearch.status.routing | true | Enable index routing for status documents.
+| opensearch.status.routing.fieldname | key | Field used for routing.
+| opensearch.status.max.buckets | 50 | Number of buckets for AggregationSpout.
+| opensearch.status.max.urls.per.bucket | 2 | URLs returned per bucket.
+| opensearch.status.bucket.field | key | Field used for bucketing.
+| opensearch.status.sample | false | Use random sampling in AggregationSpout.
+| opensearch.metrics.index.name | metrics | Index name for Storm metrics.
+|===
+
+==== Solr
+
+Integration with link:https://solr.apache.org/[Apache Solr] for indexing, URL status persistence, and metrics.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/solr[solr module] for full details. Supports both standalone Solr and SolrCloud (via ZooKeeper).
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| solr.indexer.url | - | Solr collection URL for indexing.
+| solr.indexer.zkhost | - | ZooKeeper host for SolrCloud indexing (alternative to URL).
+| solr.indexer.collection | - | SolrCloud collection name for indexing.
+| solr.status.url | - | Solr collection URL for status storage.
+| solr.status.zkhost | - | ZooKeeper host for SolrCloud status (alternative to URL).
+| solr.status.collection | - | SolrCloud collection name for status.
+| solr.status.bucket.field | host | Field used for bucketing in SolrSpout.
+| solr.status.bucket.maxsize | 5 | Maximum URLs per bucket.
+| solr.status.max.results | 10 | Maximum results per spout query.
+| solr.status.metadata.prefix | metadata | Prefix for metadata fields in Solr.
+| solr.metrics.url | - | Solr collection URL for metrics.
+|===
+
+==== SQL
+
+Integration with relational databases via JDBC for URL status persistence, indexing, and metrics.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/sql[sql module] for full details and table creation scripts.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| sql.connection.url | - | JDBC connection URL.
+| sql.connection.user | - | Database username.
+| sql.connection.password | - | Database password.
+| sql.status.table | urls | Table name for URL status storage.
+| sql.max.urls.per.bucket | 5 | Maximum URLs per bucket in SQLSpout.
+| sql.spout.max.results | 100 | Maximum results per spout query.
+| sql.metrics.table | metrics | Table name for metrics storage.
+| sql.index.table | content | Table name for indexed content.
+|===
+
+==== URLFrontier
+
+Integration with link:https://github.com/crawler-commons/url-frontier[URLFrontier], a language-agnostic API for URL management and scheduling.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/urlfrontier[urlfrontier module] for full details.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| urlfrontier.host | localhost | URLFrontier service hostname.
+| urlfrontier.port | 7071 | URLFrontier service port.
+| urlfrontier.max.buckets | 10 | Number of buckets to request from the frontier.
+| urlfrontier.max.urls.per.bucket | 10 | Maximum URLs per bucket.
+|===
+
+==== Tika
+
+Apache Tika integration for parsing non-HTML documents (PDF, Word, etc.).
+See the link:https://github.com/apache/stormcrawler/tree/main/external/tika[tika module] for full details.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| parser.mimetype.whitelist | - | Regex list of allowed MIME types. If set, only matching types are parsed by the Tika ParserBolt.
+| parser.tika.config.file | tika-config.xml | Path to the Tika configuration XML file.
+|===
+
+NOTE: When using the Tika `ParserBolt` alongside `JSoupParserBolt`, set `jsoup.treat.non.html.as.error` to `false` so that non-HTML content is passed through to the Tika parser rather than being treated as an error.
+
+==== AWS
+
+Integration with AWS services: CloudSearch for indexing and S3 for content caching.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/aws[aws module] for full details.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| cloudsearch.endpoint | - | AWS CloudSearch document endpoint URL.
+| cloudsearch.region | - | AWS region (e.g., "eu-west-1").
+| cloudsearch.batch.maxSize | -1 | Documents to buffer before sending a batch. -1 disables batching.
+| cloudsearch.batch.max.time.buffered | 10 | Maximum time (seconds) before flushing the buffer.
+| cloudsearch.batch.dump | false | Dump batch JSON to a temp directory for debugging.
+| s3.region | - | AWS region for S3 operations.
+| s3.bucket | - | S3 bucket name for content caching.
+| s3.endpoint | - | Custom S3 endpoint (optional, for S3-compatible services).
+|===
+
+==== AI (LLM Text Extraction)
+
+LLM-based text extraction using OpenAI-compatible APIs (including local models via Ollama).
+See the link:https://github.com/apache/stormcrawler/tree/main/external/ai[ai module] for full details.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| textextractor.class | - | Set to `org.apache.stormcrawler.ai.OpenAITextExtractor` to enable LLM extraction.
+| textextractor.llm.api_key | - | API key for the LLM service.
+| textextractor.llm.url | - | LLM API endpoint URL (e.g., OpenAI or Ollama endpoint).
+| textextractor.llm.model | - | Model name to use (e.g., "gpt-4", "llama2").
+| textextractor.system.prompt | - | System prompt for the LLM (optional).
+| textextractor.llm.prompt | - | User prompt template. Use `\{HTML}` and `\{REQUEST}` as placeholders (optional).
+| textextractor.llm.user_request | - | Extra user request passed to the prompt template (optional).
+| textextractor.llm.listener.clazz | - | Listener class for tracking LLM response metrics (optional).
+|===
+
+==== Playwright
+
+Browser-based fetching using link:https://playwright.dev/[Playwright] for JavaScript-rendered pages.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/playwright[playwright module] for full details.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| playwright.cdp.url | - | Chrome DevTools Protocol URL for connecting to an existing browser instance.
+| playwright.remote.ws | - | Remote WebSocket URL for Playwright (alternative to CDP).
+| playwright.skip.download | true | Skip automatic browser download. Set to false to let Playwright manage its own browser.
+| playwright.load.event | - | Page load event to wait for (e.g., "domcontentloaded", "networkidle").
+|===
+
+==== Language ID
+
+Language identification for crawled documents using the lang-detect library.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/langid[langid module] source code for details.
+
+The `LanguageID` parse filter is configured in `parsefilters.json`:
+
+[source,json]
+----
+{
+  "class": "org.apache.stormcrawler.parse.filter.LanguageID",
+  "name": "LanguageID",
+  "params": {
+    "key": "lang",
+    "minProb": 0.99,
+    "extracted": "parse.lang"
+  }
+}
+----
+
+* `key` — metadata key to store the detected language code (default: "lang")
+* `minProb` — minimum probability threshold for detection (default: 0.999)
+* `extracted` — metadata key to check for a pre-extracted language value (default: "parse.lang")
+
+==== WARC
+
+Reading and writing link:https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/[WARC] (Web ARChive) files for archival and replay.
+See the link:https://github.com/apache/stormcrawler/tree/main/external/warc[warc module] for full details.
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| warc.metadata.keys | - | Metadata keys to include as WARC metadata records (optional list).
+|===
+
+NOTE: For complete WARC records, set `http.store.headers` to `true`. The OkHttp protocol (`org.apache.stormcrawler.protocol.okhttp.HttpProtocol`) is recommended for WARC generation as it provides verbatim HTTP headers.
+
+==== Common Spout Configuration
+
+The following options are shared across storage-backed spouts (OpenSearch, Solr, SQL) that extend `AbstractQueryingSpout`:
+
+[cols="1,1,3", options="header"]
+|===
+| key | default value | description
+
+| spout.ttl.purgatory | 30 | Time (seconds) a URL remains in purgatory after ack/fail before it can be re-emitted.
+| spout.min.delay.queries | 2000 | Minimum delay (ms) between backend queries.
+| spout.max.delay.queries | 20000 | Maximum delay (ms) between backend queries (OpenSearch only).
+| spout.reset.fetchdate.after | 120 | Reset a URL's fetch date if it has not been acked within this many seconds.
 |===

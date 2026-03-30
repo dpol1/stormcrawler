@@ -19,7 +19,6 @@ package org.apache.stormcrawler.parse.filter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.net.MalformedURLException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -73,11 +72,11 @@ public class LinkParseFilter extends XPathFilter {
 
         java.net.URL sourceUrl;
         try {
-            sourceUrl = new URL(url);
+            sourceUrl = URLUtil.toURL(url);
         } catch (MalformedURLException e1) {
             // we would have known by now as previous components check whether
             // the URL is valid
-            LOG.error("MalformedURLException on {}", url);
+            LOG.error("Malformed URL on {}", url);
             return;
         }
 

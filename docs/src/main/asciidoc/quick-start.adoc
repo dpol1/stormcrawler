@@ -17,7 +17,7 @@ make sure Docker is installed on your operating system.
 
 === Terminology
 
-Before starting, we will give a quick overview of **central** Storm concepts and terminology, you need to know before starting with StormCrawler:
+Before starting, we will give a quick overview of **essential** Storm concepts and terminology that you need to know before starting with StormCrawler:
 
 - *Topology*: A topology is the overall data processing graph in Storm, consisting of spouts and bolts connected together to perform continuous, real-time computations.
 
@@ -41,6 +41,17 @@ mvn archetype:generate -DarchetypeGroupId=org.apache.stormcrawler \
                        -DarchetypeArtifactId=stormcrawler-archetype \
                        -DarchetypeVersion=<CURRENT_VERSION>
 ----
+.PowerShell
+[%collapsible]
+====
+[source,powershell]
+----
+mvn archetype:generate `
+  "-DarchetypeGroupId=org.apache.stormcrawler" `
+  "-DarchetypeArtifactId=stormcrawler-archetype" `
+  "-DarchetypeVersion=<CURRENT_VERSION>"
+----
+====
 
 Be sure to replace `<CURRENT_VERSION>` with the latest released version of StormCrawler, which you can find on link:https://search.maven.org/artifact/org.apache.stormcrawler/stormcrawler-archetype[search.maven.org].
 
@@ -59,7 +70,7 @@ The archetype will generate a fully-structured project including:
 * A pre-configured `pom.xml` with the necessary dependencies
 * Default resource files
 * A sample `crawler.flux` configuration
-* A basic configuration file
+* A sample YAML configuration file (`crawler-conf.yaml`)
 
 After generation, navigate into the newly created directory (named after the `artifactId` you specified).
 
@@ -90,7 +101,7 @@ services:
   supervisor:
     image: storm:latest
     container_name: supervisor
-    command: storm supervisor -c worker.childopts=-Xmx%HEAP-MEM%m
+    command: storm supervisor -c worker.childopts=-Xmx2g
     depends_on:
       - nimbus
       - zookeeper
@@ -129,14 +140,14 @@ After setting up your Docker Compose, you should start it up:
 docker compose up -d
 ----
 
-Check the logs and see, if every service is up and running:
+Check the logs and see if every service is up and running:
 
 [source,shell]
 ----
 docker compose logs -f
 ----
 
-Next, access the Storm UI via `https://localhost:8080` and check, that a Storm Nimbus as well as a Storm Supervisor is available.
+Next, access the Storm UI via `http://localhost:8080` and check that a Storm Nimbus as well as a Storm Supervisor is available.
 
 ==== Compile
 
@@ -165,6 +176,15 @@ After you have saved it, we need to inject the seeds into URLFrontier. This can 
 java -cp target/${artifactId}-${version}.jar crawlercommons.urlfrontier.client.Client PutURLs -f seeds.txt
 ----
 
+.PowerShell
+[%collapsible]
+====
+[source,powershell]
+----
+java -cp target/$artifactId-$version.jar crawlercommons.urlfrontier.client.Client PutURLs -f seeds.txt
+----
+====
+
 where _seeds.txt_ is the previously created file containing URLs to inject, with one URL per line.
 
 ==== Run Your First Crawl
@@ -181,6 +201,21 @@ docker run --network ${NETWORK} -it \
 storm:latest \
 storm jar ${artifactId}-${version}.jar org.apache.storm.flux.Flux --remote crawler.flux
 ----
+
+.PowerShell
+[%collapsible]
+====
+[source,powershell]
+----
+docker run --network $NETWORK -it `
+  --rm `
+  -v "${PWD}/crawler-conf.yaml:/apache-storm/crawler-conf.yaml" `
+  -v "${PWD}/crawler.flux:/apache-storm/crawler.flux" `
+  -v "${PWD}/$artifactId-$version.jar:/apache-storm/$artifactId-$version.jar" `
+  storm:latest `
+  storm jar $artifactId-$version.jar org.apache.storm.flux.Flux --remote crawler.flux
+----
+====
 
 where `${NETWORK}` is the name of the Docker network of the previously started Docker Compose. You can find this name by running
 

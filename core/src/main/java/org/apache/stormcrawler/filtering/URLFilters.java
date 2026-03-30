@@ -38,6 +38,7 @@ import org.apache.stormcrawler.JSONResource;
 import org.apache.stormcrawler.Metadata;
 import org.apache.stormcrawler.util.ConfUtils;
 import org.apache.stormcrawler.util.Configurable;
+import org.apache.stormcrawler.util.URLUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.LoggerFactory;
@@ -185,7 +186,7 @@ public class URLFilters extends URLFilter implements JSONResource {
                 for (URLFilter filter : filters.filters) {
                     long start = System.currentTimeMillis();
                     normalizedUrl =
-                            filter.filter(new URL(sourceUrl), new Metadata(), normalizedUrl);
+                            filter.filter(URLUtil.toURL(sourceUrl), new Metadata(), normalizedUrl);
                     long end = System.currentTimeMillis();
                     System.out.println(
                             "\t["

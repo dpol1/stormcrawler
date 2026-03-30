@@ -292,7 +292,7 @@ public class JSoupParserBolt extends StatusEmitterBolt {
             } else {
                 final Elements links = jsoupDoc.select("a[href]");
                 slinks = new HashMap<>(links.size());
-                final URL baseUrl = new URL(url);
+                final URL baseUrl = URLUtil.toURL(url);
                 for (Element link : links) {
                     // nofollow
                     String[] relkeywords = link.attr("rel").split(" ");
@@ -374,7 +374,7 @@ public class JSoupParserBolt extends StatusEmitterBolt {
 
                     // https://github.com/apache/stormcrawler/issues/954
                     if (allowRedirs() && StringUtils.isNotBlank(redirection)) {
-                        emitOutlink(tuple, new URL(url), redirection, metadata);
+                        emitOutlink(tuple, URLUtil.toURL(url), redirection, metadata);
                     }
 
                     // Mark URL as redirected
@@ -515,7 +515,7 @@ public class JSoupParserBolt extends StatusEmitterBolt {
 
         URL sourceUrl;
         try {
-            sourceUrl = new URL(url);
+            sourceUrl = URLUtil.toURL(url);
         } catch (MalformedURLException e) {
             // we would have known by now as previous components check whether
             // the URL is valid

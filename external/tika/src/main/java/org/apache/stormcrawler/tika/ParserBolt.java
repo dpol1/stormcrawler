@@ -205,7 +205,7 @@ public class ParserBolt extends BaseRichBolt {
 
         // as well as the filename
         try {
-            URL _url = new URL(url);
+            URL _url = URLUtil.toURL(url);
             md.set(TikaCoreProperties.RESOURCE_NAME_KEY, _url.getFile());
         } catch (MalformedURLException e1) {
             throw new IllegalStateException("Malformed URL", e1);

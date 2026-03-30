@@ -26,6 +26,8 @@ include::internals.adoc[]
 
 include::configuration.adoc[]
 
+include::extending.adoc[]
+
 include::debugging.adoc[]
 
 include::powered-by.adoc[]

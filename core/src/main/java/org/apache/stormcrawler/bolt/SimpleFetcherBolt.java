@@ -53,6 +53,7 @@ import org.apache.stormcrawler.protocol.ProtocolResponse;
 import org.apache.stormcrawler.protocol.RobotRules;
 import org.apache.stormcrawler.util.ConfUtils;
 import org.apache.stormcrawler.util.PerSecondReducer;
+import org.apache.stormcrawler.util.URLUtil;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -265,7 +266,7 @@ public class SimpleFetcherBolt extends StatusEmitterBolt {
         URL url;
 
         try {
-            url = new URL(urlString);
+            url = URLUtil.toURL(urlString);
         } catch (MalformedURLException e) {
             LOG.error("{} is a malformed URL", urlString);
             // Report to status stream and ack
