@@ -19,6 +19,7 @@ package org.apache.stormcrawler.opensearch.filtering;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.net.URL;
 import java.util.Map;
 import java.util.Timer;
@@ -71,6 +72,8 @@ public class JSONURLFilterWrapper extends URLFilter {
     private static final Logger LOG = LoggerFactory.getLogger(JSONURLFilterWrapper.class);
 
     private URLFilter delegatedURLFilter;
+    private Timer refreshTimer;
+    private RestHighLevelClient osClient;
 
     public void configure(@NotNull Map<String, Object> stormConf, @NotNull JsonNode filterParams) {
 
@@ -127,42 +130,35 @@ public class JSONURLFilterWrapper extends URLFilter {
 
         final JSONResource resource = (JSONResource) delegatedURLFilter;
 
-        new Timer()
-                .schedule(
-                        new TimerTask() {
-                            private RestHighLevelClient osClient;
-
-                            public void run() {
-                                if (osClient == null) {
-                                    try {
-                                        osClient =
-                                                OpenSearchConnection.getClient(stormConf, "config");
-                                    } catch (Exception e) {
-                                        LOG.error(
-                                                "Exception while creating OpenSearch connection",
-                                                e);
-                                    }
-                                }
-                                if (osClient != null) {
-                                    LOG.info("Reloading json resources from OpenSearch");
-                                    try {
-                                        GetResponse response =
-                                                osClient.get(
-                                                        new GetRequest(
-                                                                "config",
-                                                                resource.getResourceFile()),
-                                                        RequestOptions.DEFAULT);
-                                        resource.loadJSONResources(
-                                                new ByteArrayInputStream(
-                                                        response.getSourceAsBytes()));
-                                    } catch (Exception e) {
-                                        LOG.error("Can't load config from OpenSearch", e);
-                                    }
-                                }
+        refreshTimer = new Timer();
+        refreshTimer.schedule(
+                new TimerTask() {
+                    public void run() {
+                        if (osClient == null) {
+                            try {
+                                osClient = OpenSearchConnection.getClient(stormConf, "config");
+                            } catch (Exception e) {
+                                LOG.error("Exception while creating OpenSearch connection", e);
                             }
-                        },
-                        0,
-                        refreshRate * 1000);
+                        }
+                        if (osClient != null) {
+                            LOG.info("Reloading json resources from OpenSearch");
+                            try {
+                                GetResponse response =
+                                        osClient.get(
+                                                new GetRequest(
+                                                        "config", resource.getResourceFile()),
+                                                RequestOptions.DEFAULT);
+                                resource.loadJSONResources(
+                                        new ByteArrayInputStream(response.getSourceAsBytes()));
+                            } catch (Exception e) {
+                                LOG.error("Can't load config from OpenSearch", e);
+                            }
+                        }
+                    }
+                },
+                0,
+                refreshRate * 1000);
     }
 
     @Override
@@ -171,5 +167,19 @@ public class JSONURLFilterWrapper extends URLFilter {
             @Nullable Metadata sourceMetadata,
             @NotNull String urlToFilter) {
         return delegatedURLFilter.filter(sourceUrl, sourceMetadata, urlToFilter);
+    }
+
+    @Override
+    public void cleanup() {
+        if (refreshTimer != null) {
+            refreshTimer.cancel();
+        }
+        if (osClient != null) {
+            try {
+                osClient.close();
+            } catch (IOException e) {
+                LOG.error("Exception when closing OpenSearch client", e);
+            }
+        }
     }
 }
