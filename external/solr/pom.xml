@@ -70,6 +70,7 @@ under the License.
                             <createSourcesJar>true</createSourcesJar>
                             <useBaseVersion>true</useBaseVersion>
                             <createDependencyReducedPom>true</createDependencyReducedPom>
+                            <useDependencyReducedPomInJar>true</useDependencyReducedPomInJar>
                             <artifactSet>
                                 <includes>
                                     <include>org.apache.solr:solr-solrj-jetty</include>
