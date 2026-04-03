@@ -559,6 +559,7 @@ under the License.
                                 <exclude>CONTRIBUTING.md</exclude>
                                 <exclude>RELEASING.md</exclude>
                                 <exclude>external/opensearch/dashboards/**</exclude>
+                                <exclude>external/opensearch-java/dashboards/**</exclude>
                                 <exclude>external/solr/archetype/src/main/resources/archetype-resources/configsets/**</exclude>
                                 <exclude>THIRD-PARTY.properties</exclude>
                                 <exclude>THIRD-PARTY.txt</exclude>

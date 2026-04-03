@@ -19,7 +19,9 @@ package org.apache.stormcrawler.opensearch.filtering;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -29,10 +31,9 @@ import org.apache.stormcrawler.filtering.URLFilter;
 import org.apache.stormcrawler.opensearch.OpenSearchConnection;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.opensearch.action.get.GetRequest;
-import org.opensearch.action.get.GetResponse;
-import org.opensearch.client.RequestOptions;
-import org.opensearch.client.RestHighLevelClient;
+import org.opensearch.client.json.JsonData;
+import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch.core.GetResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,8 +47,8 @@ import org.slf4j.LoggerFactory;
  *
  * <pre>
  *  {
- *     "class": "org.apache.stormcrawler.elasticsearch.filtering.JSONURLFilterWrapper",
- *     "name": "ESFastURLFilter",
+ *     "class": "org.apache.stormcrawler.opensearch.filtering.JSONURLFilterWrapper",
+ *     "name": "OSFastURLFilter",
  *     "params": {
  *         "refresh": "60",
  *         "delegate": {
@@ -71,6 +72,8 @@ public class JSONURLFilterWrapper extends URLFilter {
     private static final Logger LOG = LoggerFactory.getLogger(JSONURLFilterWrapper.class);
 
     private URLFilter delegatedURLFilter;
+    private Timer refreshTimer;
+    private OpenSearchClient osClient;
 
     public void configure(@NotNull Map<String, Object> stormConf, @NotNull JsonNode filterParams) {
 
@@ -127,42 +130,40 @@ public class JSONURLFilterWrapper extends URLFilter {
 
         final JSONResource resource = (JSONResource) delegatedURLFilter;
 
-        new Timer()
-                .schedule(
-                        new TimerTask() {
-                            private RestHighLevelClient osClient;
-
-                            public void run() {
-                                if (osClient == null) {
-                                    try {
-                                        osClient =
-                                                OpenSearchConnection.getClient(stormConf, "config");
-                                    } catch (Exception e) {
-                                        LOG.error(
-                                                "Exception while creating OpenSearch connection",
-                                                e);
-                                    }
-                                }
-                                if (osClient != null) {
-                                    LOG.info("Reloading json resources from OpenSearch");
-                                    try {
-                                        GetResponse response =
-                                                osClient.get(
-                                                        new GetRequest(
-                                                                "config",
-                                                                resource.getResourceFile()),
-                                                        RequestOptions.DEFAULT);
-                                        resource.loadJSONResources(
-                                                new ByteArrayInputStream(
-                                                        response.getSourceAsBytes()));
-                                    } catch (Exception e) {
-                                        LOG.error("Can't load config from OpenSearch", e);
-                                    }
-                                }
+        refreshTimer = new Timer();
+        refreshTimer.schedule(
+                new TimerTask() {
+                    public void run() {
+                        if (osClient == null) {
+                            try {
+                                osClient = OpenSearchConnection.getClient(stormConf, "config");
+                            } catch (Exception e) {
+                                LOG.error("Exception while creating OpenSearch connection", e);
                             }
-                        },
-                        0,
-                        refreshRate * 1000);
+                        }
+                        if (osClient != null) {
+                            LOG.info("Reloading json resources from OpenSearch");
+                            try {
+                                GetResponse<JsonData> response =
+                                        osClient.get(
+                                                g ->
+                                                        g.index("config")
+                                                                .id(resource.getResourceFile()),
+                                                JsonData.class);
+                                if (response.found() && response.source() != null) {
+                                    String json = response.source().toJson().toString();
+                                    resource.loadJSONResources(
+                                            new ByteArrayInputStream(
+                                                    json.getBytes(StandardCharsets.UTF_8)));
+                                }
+                            } catch (Exception e) {
+                                LOG.error("Can't load config from OpenSearch", e);
+                            }
+                        }
+                    }
+                },
+                0,
+                refreshRate * 1000);
     }
 
     @Override
@@ -171,5 +172,19 @@ public class JSONURLFilterWrapper extends URLFilter {
             @Nullable Metadata sourceMetadata,
             @NotNull String urlToFilter) {
         return delegatedURLFilter.filter(sourceUrl, sourceMetadata, urlToFilter);
+    }
+
+    @Override
+    public void cleanup() {
+        if (refreshTimer != null) {
+            refreshTimer.cancel();
+        }
+        if (osClient != null) {
+            try {
+                osClient._transport().close();
+            } catch (IOException e) {
+                LOG.error("Exception when closing OpenSearch client", e);
+            }
+        }
     }
 }

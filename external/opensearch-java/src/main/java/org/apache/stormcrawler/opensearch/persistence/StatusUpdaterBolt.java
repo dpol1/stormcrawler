@@ -22,8 +22,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -41,6 +41,7 @@ import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
 import org.apache.stormcrawler.Metadata;
+import org.apache.stormcrawler.opensearch.AsyncBulkProcessor;
 import org.apache.stormcrawler.opensearch.BulkItemResponseToFailedFlag;
 import org.apache.stormcrawler.opensearch.Constants;
 import org.apache.stormcrawler.opensearch.IndexCreation;
@@ -52,15 +53,9 @@ import org.apache.stormcrawler.util.PerSecondReducer;
 import org.apache.stormcrawler.util.URLPartitioner;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.opensearch.action.DocWriteRequest;
-import org.opensearch.action.bulk.BulkItemResponse;
-import org.opensearch.action.bulk.BulkProcessor;
-import org.opensearch.action.bulk.BulkRequest;
-import org.opensearch.action.bulk.BulkResponse;
-import org.opensearch.action.index.IndexRequest;
-import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.core.rest.RestStatus;
-import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.client.opensearch.core.BulkRequest;
+import org.opensearch.client.opensearch.core.BulkResponse;
+import org.opensearch.client.opensearch.core.bulk.BulkOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,7 +64,7 @@ import org.slf4j.LoggerFactory;
  * 'status' stream. To be used in combination with a Spout to read from the index.
  */
 public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
-        implements RemovalListener<String, List<Tuple>>, BulkProcessor.Listener {
+        implements RemovalListener<String, List<Tuple>>, AsyncBulkProcessor.Listener {
 
     private static final Logger LOG = LoggerFactory.getLogger(StatusUpdaterBolt.class);
 
@@ -190,7 +185,7 @@ public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
         try {
             connection = OpenSearchConnection.getConnection(stormConf, OSBoltType, this);
         } catch (Exception e1) {
-            LOG.error("Can't connect to ElasticSearch", e1);
+            LOG.error("Can't connect to OpenSearch", e1);
             throw new RuntimeException(e1);
         }
 
@@ -244,16 +239,16 @@ public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
             return;
         }
 
-        XContentBuilder builder = XContentFactory.jsonBuilder().startObject();
-        builder.field("url", url);
-        builder.field("status", status);
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("url", url);
+        doc.put("status", status.name());
 
-        builder.startObject("metadata");
+        Map<String, Object> metadataMap = new HashMap<>();
         for (String mdKey : metadata.keySet()) {
             String[] values = metadata.getValues(mdKey);
             // periods are not allowed - replace with %2E
             mdKey = mdKey.replaceAll("\\.", "%2E");
-            builder.array(mdKey, values);
+            metadataMap.put(mdKey, List.of(values));
         }
 
         String partitionKey = partitioner.getPartition(url, metadata);
@@ -263,32 +258,51 @@ public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
 
         // store routing key in metadata?
         if (StringUtils.isNotBlank(fieldNameForRoutingKey) && routingFieldNameInMetadata) {
-            builder.field(fieldNameForRoutingKey, partitionKey);
+            metadataMap.put(fieldNameForRoutingKey, partitionKey);
         }
 
-        builder.endObject();
+        doc.put("metadata", metadataMap);
 
         // store routing key outside metadata?
         if (StringUtils.isNotBlank(fieldNameForRoutingKey) && !routingFieldNameInMetadata) {
-            builder.field(fieldNameForRoutingKey, partitionKey);
+            doc.put(fieldNameForRoutingKey, partitionKey);
         }
 
         if (nextFetch.isPresent()) {
-            builder.timeField("nextFetchDate", nextFetch.get());
+            doc.put("nextFetchDate", nextFetch.get().toInstant().toString());
         }
-
-        builder.endObject();
-
-        IndexRequest request = new IndexRequest(getIndexName(metadata));
-
         // check that we don't overwrite an existing entry
         // When create is used, the index operation will fail if a document
         // by that id already exists in the index.
         final boolean create = status.equals(Status.DISCOVERED);
-        request.source(builder).id(documentID).create(create);
+        final String targetIndex = getIndexName(metadata);
+        final String routing = doRouting ? partitionKey : null;
 
-        if (doRouting) {
-            request.routing(partitionKey);
+        BulkOperation op;
+        if (create) {
+            op =
+                    BulkOperation.of(
+                            b ->
+                                    b.create(
+                                            c -> {
+                                                c.index(targetIndex).id(documentID).document(doc);
+                                                if (routing != null) {
+                                                    c.routing(routing);
+                                                }
+                                                return c;
+                                            }));
+        } else {
+            op =
+                    BulkOperation.of(
+                            b ->
+                                    b.index(
+                                            idx -> {
+                                                idx.index(targetIndex).id(documentID).document(doc);
+                                                if (routing != null) {
+                                                    idx.routing(routing);
+                                                }
+                                                return idx;
+                                            }));
         }
 
         waitAckLock.lock();
@@ -302,7 +316,7 @@ public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
 
         LOG.debug("Sending to OpenSearch buffer {} with ID {}", url, documentID);
 
-        connection.addToProcessor(request);
+        connection.addToProcessor(op);
     }
 
     @Override
@@ -320,26 +334,31 @@ public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
 
     @Override
     public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
-        LOG.debug("afterBulk [{}] with {} responses", executionId, request.numberOfActions());
+        LOG.debug("afterBulk [{}] with {} responses", executionId, request.operations().size());
         eventCounter.scope("bulks_received").incrBy(1);
-        eventCounter.scope("bulk_msec").incrBy(response.getTook().getMillis());
-        eventCounter.scope("received").incrBy(request.numberOfActions());
-        receivedPerSecMetrics.scope("received").update(request.numberOfActions());
+        eventCounter.scope("bulk_msec").incrBy(response.took());
+        eventCounter.scope("received").incrBy(request.operations().size());
+        receivedPerSecMetrics.scope("received").update(request.operations().size());
 
         var idsToBulkItemsWithFailedFlag =
-                Arrays.stream(response.getItems())
+                response.items().stream()
                         .map(
                                 bir -> {
-                                    String id = bir.getId();
-                                    BulkItemResponse.Failure f = bir.getFailure();
+                                    String id = bir.id();
+                                    var error = bir.error();
                                     boolean failed = false;
-                                    if (f != null) {
+                                    if (error != null) {
                                         // already discovered
-                                        if (f.getStatus().equals(RestStatus.CONFLICT)) {
+                                        if (bir.status() == 409) {
                                             eventCounter.scope("doc_conflicts").incrBy(1);
                                             LOG.debug("Doc conflict ID {}", id);
                                         } else {
-                                            LOG.error("Update ID {}, failure: {}", id, f);
+                                            LOG.error(
+                                                    "Update ID {}, failure: {}",
+                                                    id,
+                                                    error.reason() != null
+                                                            ? error.reason()
+                                                            : "unknown");
                                             failed = true;
                                         }
                                     }
@@ -440,13 +459,14 @@ public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
     @Override
     public void afterBulk(long executionId, BulkRequest request, Throwable throwable) {
         eventCounter.scope("bulks_received").incrBy(1);
-        eventCounter.scope("received").incrBy(request.numberOfActions());
-        receivedPerSecMetrics.scope("received").update(request.numberOfActions());
+        eventCounter.scope("received").incrBy(request.operations().size());
+        receivedPerSecMetrics.scope("received").update(request.operations().size());
         LOG.error("Exception with bulk {} - failing the whole lot ", executionId, throwable);
 
         final var failedIds =
-                request.requests().stream()
-                        .map(DocWriteRequest::id)
+                request.operations().stream()
+                        .map(OpenSearchConnection::getBulkOperationId)
+                        .filter(Objects::nonNull)
                         .collect(Collectors.toUnmodifiableSet());
         Map<String, List<Tuple>> failedTupleLists;
         waitAckLock.lock();
@@ -476,7 +496,7 @@ public class StatusUpdaterBolt extends AbstractStatusUpdaterBolt
 
     @Override
     public void beforeBulk(long executionId, BulkRequest request) {
-        LOG.debug("beforeBulk {} with {} actions", executionId, request.numberOfActions());
+        LOG.debug("beforeBulk {} with {} actions", executionId, request.operations().size());
         eventCounter.scope("bulks_sent").incrBy(1);
     }
 

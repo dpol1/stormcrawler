@@ -31,8 +31,7 @@ import org.apache.stormcrawler.opensearch.IndexCreation;
 import org.apache.stormcrawler.opensearch.OpenSearchConnection;
 import org.apache.stormcrawler.persistence.AbstractQueryingSpout;
 import org.apache.stormcrawler.util.ConfUtils;
-import org.opensearch.client.RestHighLevelClient;
-import org.opensearch.search.SearchHit;
+import org.opensearch.client.opensearch.OpenSearchClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +71,7 @@ public abstract class AbstractSpout extends AbstractQueryingSpout {
 
     protected String indexName;
 
-    protected static RestHighLevelClient client;
+    protected static OpenSearchClient client;
 
     /**
      * when using multiple instances - each one is in charge of a specific shard useful when
@@ -180,14 +179,20 @@ public abstract class AbstractSpout extends AbstractQueryingSpout {
     /** Builds a query and use it retrieve the results from OS * */
     protected abstract void populateBuffer();
 
-    protected final boolean addHitToBuffer(SearchHit hit) {
-        Map<String, Object> keyValues = hit.getSourceAsMap();
-        String url = (String) keyValues.get("url");
+    /**
+     * Adds a document source to the URL buffer unless it is already being processed.
+     *
+     * @param source the document source as a key-value map (must contain a "url" entry)
+     * @return {@code true} if the URL was added to the buffer, {@code false} if it was already
+     *     being processed or already present
+     */
+    protected final boolean addHitToBuffer(Map<String, Object> source) {
+        String url = (String) source.get("url");
         // is already being processed - skip it!
         if (beingProcessed.containsKey(url)) {
             return false;
         }
-        return buffer.add(url, fromKeyValues(keyValues));
+        return buffer.add(url, fromKeyValues(source));
     }
 
     protected final Metadata fromKeyValues(Map<String, Object> keyValues) {
@@ -225,11 +230,14 @@ public abstract class AbstractSpout extends AbstractQueryingSpout {
 
     @Override
     public void close() {
-        if (client != null) {
-            try {
-                client.close();
-            } catch (IOException e) {
-                LOG.error("Exception caught when closing client", e);
+        synchronized (AbstractSpout.class) {
+            if (client != null) {
+                try {
+                    client._transport().close();
+                } catch (IOException e) {
+                    LOG.error("Exception caught when closing client", e);
+                }
+                client = null;
             }
         }
     }

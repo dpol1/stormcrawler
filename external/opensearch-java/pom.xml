@@ -31,6 +31,8 @@ under the License.
 
     <properties>
         <opensearch.version>2.19.5</opensearch.version>
+        <opensearch.java.version>2.13.0</opensearch.java.version>
+        <opensearch.restclient.version>2.12.0</opensearch.restclient.version>
         <jacoco.haltOnFailure>true</jacoco.haltOnFailure>
         <jacoco.classRatio>0.27</jacoco.classRatio>
         <jacoco.instructionRatio>0.27</jacoco.instructionRatio>
@@ -45,7 +47,7 @@ under the License.
 
     <name>stormcrawler-opensearch-java</name>
     <url>
-        https://github.com/apache/stormcrawler/tree/master/external/opensearch</url>
+        https://github.com/apache/stormcrawler/tree/master/external/opensearch-java</url>
     <description>OpenSearch module for Apache StormCrawler using the new opensearch-java client</description>
 
     <build>
@@ -73,22 +75,17 @@ under the License.
     <dependencies>
         <dependency>
             <groupId>org.opensearch.client</groupId>
-            <artifactId>opensearch-rest-high-level-client</artifactId>
-            <version>${opensearch.version}</version>
+            <artifactId>opensearch-java</artifactId>
+            <version>${opensearch.java.version}</version>
         </dependency>
 
-        <dependency>
-            <groupId>org.awaitility</groupId>
-            <artifactId>awaitility</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <!--
+        <!-- Sniffer version aligned with opensearch-rest-client resolved from
+        opensearch-java to avoid classpath conflicts (see #1515).
         https://mvnrepository.com/artifact/org.opensearch.client/opensearch-rest-client-sniffer -->
         <dependency>
             <groupId>org.opensearch.client</groupId>
             <artifactId>opensearch-rest-client-sniffer</artifactId>
-            <version>${opensearch.version}</version>
+            <version>${opensearch.restclient.version}</version>
         </dependency>
 
         <dependency>
@@ -108,6 +105,12 @@ under the License.
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
 

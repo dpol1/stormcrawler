@@ -19,6 +19,8 @@ package org.apache.stormcrawler.opensearch.parse.filter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -27,10 +29,9 @@ import org.apache.stormcrawler.opensearch.OpenSearchConnection;
 import org.apache.stormcrawler.parse.ParseFilter;
 import org.apache.stormcrawler.parse.ParseResult;
 import org.jetbrains.annotations.NotNull;
-import org.opensearch.action.get.GetRequest;
-import org.opensearch.action.get.GetResponse;
-import org.opensearch.client.RequestOptions;
-import org.opensearch.client.RestHighLevelClient;
+import org.opensearch.client.json.JsonData;
+import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch.core.GetResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.DocumentFragment;
@@ -45,7 +46,7 @@ import org.w3c.dom.DocumentFragment;
  *
  * <pre>
  *  {
- *     "class": "org.apache.stormcrawler.elasticsearch.parse.filter.JSONResourceWrapper",
+ *     "class": "org.apache.stormcrawler.opensearch.parse.filter.JSONResourceWrapper",
  *     "name": "OpenSearchCollectionTagger",
  *     "params": {
  *         "refresh": "60",
@@ -70,6 +71,8 @@ public class JSONResourceWrapper extends ParseFilter {
     private static final Logger LOG = LoggerFactory.getLogger(JSONResourceWrapper.class);
 
     private ParseFilter delegatedParseFilter;
+    private Timer refreshTimer;
+    private OpenSearchClient osClient;
 
     public void configure(@NotNull Map<String, Object> stormConf, @NotNull JsonNode filterParams) {
 
@@ -126,46 +129,58 @@ public class JSONResourceWrapper extends ParseFilter {
 
         final JSONResource resource = (JSONResource) delegatedParseFilter;
 
-        new Timer()
-                .schedule(
-                        new TimerTask() {
-                            private RestHighLevelClient esClient;
-
-                            public void run() {
-                                if (esClient == null) {
-                                    try {
-                                        esClient =
-                                                OpenSearchConnection.getClient(stormConf, "config");
-                                    } catch (Exception e) {
-                                        LOG.error(
-                                                "Exception while creating OpenSearch connection",
-                                                e);
-                                    }
-                                }
-                                if (esClient != null) {
-                                    LOG.info("Reloading json resources from OpenSearch");
-                                    try {
-                                        GetResponse response =
-                                                esClient.get(
-                                                        new GetRequest(
-                                                                "config",
-                                                                resource.getResourceFile()),
-                                                        RequestOptions.DEFAULT);
-                                        resource.loadJSONResources(
-                                                new ByteArrayInputStream(
-                                                        response.getSourceAsBytes()));
-                                    } catch (Exception e) {
-                                        LOG.error("Can't load config from OpenSearch", e);
-                                    }
-                                }
+        refreshTimer = new Timer();
+        refreshTimer.schedule(
+                new TimerTask() {
+                    public void run() {
+                        if (osClient == null) {
+                            try {
+                                osClient = OpenSearchConnection.getClient(stormConf, "config");
+                            } catch (Exception e) {
+                                LOG.error("Exception while creating OpenSearch connection", e);
                             }
-                        },
-                        0,
-                        refreshRate * 1000);
+                        }
+                        if (osClient != null) {
+                            LOG.info("Reloading json resources from OpenSearch");
+                            try {
+                                GetResponse<JsonData> response =
+                                        osClient.get(
+                                                g ->
+                                                        g.index("config")
+                                                                .id(resource.getResourceFile()),
+                                                JsonData.class);
+                                if (response.found() && response.source() != null) {
+                                    String json = response.source().toJson().toString();
+                                    resource.loadJSONResources(
+                                            new ByteArrayInputStream(
+                                                    json.getBytes(StandardCharsets.UTF_8)));
+                                }
+                            } catch (Exception e) {
+                                LOG.error("Can't load config from OpenSearch", e);
+                            }
+                        }
+                    }
+                },
+                0,
+                refreshRate * 1000);
     }
 
     @Override
     public void filter(String URL, byte[] content, DocumentFragment doc, ParseResult parse) {
         delegatedParseFilter.filter(URL, content, doc, parse);
+    }
+
+    @Override
+    public void cleanup() {
+        if (refreshTimer != null) {
+            refreshTimer.cancel();
+        }
+        if (osClient != null) {
+            try {
+                osClient._transport().close();
+            } catch (IOException e) {
+                LOG.error("Exception when closing OpenSearch client", e);
+            }
+        }
     }
 }

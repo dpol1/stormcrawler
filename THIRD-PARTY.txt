@@ -30,6 +30,7 @@ List of third-party dependencies grouped by their license type.
         * Apache Commons IO (commons-io:commons-io:2.21.0 - https://commons.apache.org/proper/commons-io/)
         * Apache Commons Lang (org.apache.commons:commons-lang3:3.20.0 - https://commons.apache.org/proper/commons-lang/)
         * Apache Commons Logging (commons-logging:commons-logging:1.2 - http://commons.apache.org/proper/commons-logging/)
+        * Apache Commons Logging (commons-logging:commons-logging:1.3.3 - https://commons.apache.org/proper/commons-logging/)
         * Apache Commons Logging (commons-logging:commons-logging:1.3.6 - https://commons.apache.org/proper/commons-logging/)
         * Apache Commons Math (org.apache.commons:commons-math3:3.6.1 - http://commons.apache.org/proper/commons-math/)
         * Apache FontBox (org.apache.pdfbox:fontbox:3.0.7 - http://pdfbox.apache.org/)
@@ -51,7 +52,10 @@ List of third-party dependencies grouped by their license type.
         * Apache HBase Unsafe Wrapper (org.apache.hbase.thirdparty:hbase-unsafe:4.1.12 - https://hbase.apache.org/hbase-unsafe)
         * Apache HttpAsyncClient (org.apache.httpcomponents:httpasyncclient:4.1.5 - http://hc.apache.org/httpcomponents-asyncclient)
         * Apache HttpClient (org.apache.httpcomponents:httpclient:4.5.14 - http://hc.apache.org/httpcomponents-client-ga)
+        * Apache HttpClient (org.apache.httpcomponents.client5:httpclient5:5.3.1 - https://hc.apache.org/httpcomponents-client-5.0.x/5.3.1/httpclient5/)
         * Apache HttpClient Mime (org.apache.httpcomponents:httpmime:4.5.14 - http://hc.apache.org/httpcomponents-client-ga)
+        * Apache HttpComponents Core HTTP/1.1 (org.apache.httpcomponents.core5:httpcore5:5.2.5 - https://hc.apache.org/httpcomponents-core-5.2.x/5.2.5/httpcore5/)
+        * Apache HttpComponents Core HTTP/2 (org.apache.httpcomponents.core5:httpcore5-h2:5.2.5 - https://hc.apache.org/httpcomponents-core-5.2.x/5.2.5/httpcore5-h2/)
         * Apache HttpCore (org.apache.httpcomponents:httpcore:4.4.16 - http://hc.apache.org/httpcomponents-core-ga)
         * Apache HttpCore NIO (org.apache.httpcomponents:httpcore-nio:4.4.16 - http://hc.apache.org/httpcomponents-core-ga)
         * Apache James :: Mime4j :: Core (org.apache.james:apache-mime4j-core:0.8.13 - http://james.apache.org/mime4j/apache-mime4j-core)
@@ -212,6 +216,7 @@ List of third-party dependencies grouped by their license type.
         * opensearch-compress (org.opensearch:opensearch-compress:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
         * opensearch-core (org.opensearch:opensearch-core:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
         * opensearch-geo (org.opensearch:opensearch-geo:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
+        * OpenSearch Java Client (org.opensearch.client:opensearch-java:2.13.0 - https://github.com/opensearch-project/opensearch-java/)
         * opensearch-secure-sm (org.opensearch:opensearch-secure-sm:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
         * opensearch-task-commons (org.opensearch:opensearch-task-commons:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
         * opensearch-telemetry (org.opensearch:opensearch-telemetry:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
@@ -248,6 +253,7 @@ List of third-party dependencies grouped by their license type.
         * Playwright - Main Library (com.microsoft.playwright:playwright:1.58.0 - https://github.com/microsoft/playwright-java/playwright)
         * proto-google-common-protos (com.google.api.grpc:proto-google-common-protos:2.59.2 - https://github.com/googleapis/sdk-platform-java)
         * rank-eval (org.opensearch.plugin:rank-eval-client:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
+        * rest (org.opensearch.client:opensearch-rest-client:2.12.0 - https://github.com/opensearch-project/OpenSearch.git)
         * rest (org.opensearch.client:opensearch-rest-client:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
         * rest-high-level (org.opensearch.client:opensearch-rest-high-level-client:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
         * rome (com.rometools:rome:2.1.0 - http://rometools.com/rome)
@@ -256,6 +262,7 @@ List of third-party dependencies grouped by their license type.
         * Shaded Deps for Storm Client (org.apache.storm:storm-shaded-deps:2.8.5 - https://storm.apache.org/storm-shaded-deps)
         * SnakeYAML (org.yaml:snakeyaml:2.6 - https://bitbucket.org/snakeyaml/snakeyaml)
         * snappy-java (org.xerial.snappy:snappy-java:1.1.10.4 - https://github.com/xerial/snappy-java)
+        * sniffer (org.opensearch.client:opensearch-rest-client-sniffer:2.12.0 - https://github.com/opensearch-project/OpenSearch.git)
         * sniffer (org.opensearch.client:opensearch-rest-client-sniffer:2.19.5 - https://github.com/opensearch-project/OpenSearch.git)
         * SparseBitSet (com.zaxxer:SparseBitSet:1.3 - https://github.com/brettwooldridge/SparseBitSet)
         * storm-autocreds (org.apache.storm:storm-autocreds:2.8.5 - https://storm.apache.org/external/storm-autocreds)
@@ -344,6 +351,10 @@ List of third-party dependencies grouped by their license type.
         * JAXB Runtime (org.glassfish.jaxb:jaxb-runtime:4.0.7 - https://eclipse-ee4j.github.io/jaxb-ri/)
         * TXW2 Runtime (org.glassfish.jaxb:txw2:4.0.7 - https://eclipse-ee4j.github.io/jaxb-ri/)
 
+    Eclipse Distribution License v. 1.0, Eclipse Public License v. 2.0
+
+        * org.eclipse.yasson (org.eclipse:yasson:2.0.2 - https://projects.eclipse.org/projects/ee4j.yasson)
+
     Eclipse Public License, Version 2.0, GPL-2.0-with-classpath-exception
 
         * Jakarta RESTful WS API (jakarta.ws.rs:jakarta.ws.rs-api:3.1.0 - https://github.com/eclipse-ee4j/jaxrs-api)
@@ -351,6 +362,13 @@ List of third-party dependencies grouped by their license type.
     Eclipse Public License, Version 2.0, The GNU General Public License (GPL), Version 2, With Classpath Exception
 
         * Jakarta Annotations API (jakarta.annotation:jakarta.annotation-api:1.3.5 - https://projects.eclipse.org/projects/ee4j.ca)
+
+    Eclipse Public License 2.0, GNU General Public License, version 2 with the GNU Classpath Exception
+
+        * Eclipse Parsson (org.eclipse.parsson:parsson:1.1.6 - https://github.com/eclipse-ee4j/parsson/parsson)
+        * Jakarta JSON Processing API (jakarta.json:jakarta.json-api:2.1.3 - https://github.com/eclipse-ee4j/jsonp)
+        * JSON-B API (jakarta.json.bind:jakarta.json.bind-api:2.0.0 - https://eclipse-ee4j.github.io/jsonb-api)
+        * JSON-P Default Provider (org.glassfish:jakarta.json:2.0.0 - https://github.com/eclipse-ee4j/jsonp)
 
     GENERAL PUBLIC LICENSE, version 3 (GPL-3.0), GNU LESSER GENERAL PUBLIC LICENSE, version 3 (LGPL-3.0), Mozilla Public License Version 1.1
 

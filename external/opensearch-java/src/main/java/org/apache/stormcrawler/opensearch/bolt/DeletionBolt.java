@@ -22,7 +22,6 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
 import java.lang.invoke.MethodHandles;
-import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -36,18 +35,15 @@ import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Tuple;
 import org.apache.stormcrawler.Metadata;
+import org.apache.stormcrawler.opensearch.AsyncBulkProcessor;
 import org.apache.stormcrawler.opensearch.BulkItemResponseToFailedFlag;
 import org.apache.stormcrawler.opensearch.OpenSearchConnection;
 import org.apache.stormcrawler.util.ConfUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.opensearch.action.DocWriteRequest;
-import org.opensearch.action.bulk.BulkItemResponse;
-import org.opensearch.action.bulk.BulkProcessor.Listener;
-import org.opensearch.action.bulk.BulkRequest;
-import org.opensearch.action.bulk.BulkResponse;
-import org.opensearch.action.delete.DeleteRequest;
-import org.opensearch.core.rest.RestStatus;
+import org.opensearch.client.opensearch.core.BulkRequest;
+import org.opensearch.client.opensearch.core.BulkResponse;
+import org.opensearch.client.opensearch.core.bulk.BulkOperation;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -57,7 +53,7 @@ import org.slf4j.LoggerFactory;
  * delete documents which were indexed under the canonical URL.
  */
 public class DeletionBolt extends BaseRichBolt
-        implements RemovalListener<String, List<Tuple>>, Listener {
+        implements RemovalListener<String, List<Tuple>>, AsyncBulkProcessor.Listener {
 
     static final org.slf4j.Logger LOG =
             LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
@@ -106,6 +102,7 @@ public class DeletionBolt extends BaseRichBolt
         context.registerMetric("waitAck", () -> waitAck.estimatedSize(), 10);
     }
 
+    @Override
     public void onRemoval(
             @Nullable String key, @Nullable List<Tuple> value, @NotNull RemovalCause cause) {
         if (!cause.wasEvicted()) {
@@ -138,8 +135,8 @@ public class DeletionBolt extends BaseRichBolt
         // used
 
         final String docID = getDocumentID(metadata, url);
-        DeleteRequest dr = new DeleteRequest(getIndexName(metadata), docID);
-        connection.addToProcessor(dr);
+        final String targetIndex = getIndexName(metadata);
+        BulkOperation op = BulkOperation.of(b -> b.delete(d -> d.index(targetIndex).id(docID)));
 
         waitAckLock.lock();
         try {
@@ -153,6 +150,8 @@ public class DeletionBolt extends BaseRichBolt
         } finally {
             waitAckLock.unlock();
         }
+
+        connection.addToProcessor(op);
     }
 
     @Override
@@ -185,14 +184,14 @@ public class DeletionBolt extends BaseRichBolt
     @Override
     public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
         var idsToBulkItemsWithFailedFlag =
-                Arrays.stream(response.getItems())
+                response.items().stream()
                         .map(
                                 bir -> {
-                                    String id = bir.getId();
-                                    BulkItemResponse.Failure f = bir.getFailure();
+                                    String id = bir.id();
+                                    var error = bir.error();
                                     boolean failed = false;
-                                    if (f != null) {
-                                        if (f.getStatus().equals(RestStatus.CONFLICT)) {
+                                    if (error != null) {
+                                        if (bir.status() == 409) {
                                             LOG.debug("Doc conflict ID {}", id);
                                         } else {
                                             failed = true;
@@ -257,8 +256,6 @@ public class DeletionBolt extends BaseRichBolt
                 for (Tuple t : associatedTuple) {
                     String url = (String) t.getValueByField("url");
 
-                    Metadata metadata = (Metadata) t.getValueByField("metadata");
-
                     if (!selected.failed) {
                         ackCount++;
                         _collector.ack(t);
@@ -288,8 +285,9 @@ public class DeletionBolt extends BaseRichBolt
         LOG.error("Exception with bulk {} - failing the whole lot ", executionId, failure);
 
         final var failedIds =
-                request.requests().stream()
-                        .map(DocWriteRequest::id)
+                request.operations().stream()
+                        .map(OpenSearchConnection::getBulkOperationId)
+                        .filter(Objects::nonNull)
                         .collect(Collectors.toUnmodifiableSet());
         Map<String, List<Tuple>> failedTupleLists;
         waitAckLock.lock();

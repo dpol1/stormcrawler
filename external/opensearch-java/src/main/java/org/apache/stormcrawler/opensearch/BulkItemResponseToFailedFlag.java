@@ -17,25 +17,41 @@
 
 package org.apache.stormcrawler.opensearch;
 
-import java.io.IOException;
+import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
-import org.opensearch.action.DocWriteRequest;
-import org.opensearch.action.DocWriteResponse;
-import org.opensearch.action.bulk.BulkItemResponse;
-import org.opensearch.core.common.io.stream.StreamOutput;
-import org.opensearch.core.rest.RestStatus;
-import org.opensearch.core.xcontent.ToXContent;
-import org.opensearch.core.xcontent.XContentBuilder;
+import org.jetbrains.annotations.Nullable;
+import org.opensearch.client.opensearch._types.ErrorCause;
+import org.opensearch.client.opensearch.core.bulk.BulkResponseItem;
 
 public final class BulkItemResponseToFailedFlag {
-    @NotNull public final BulkItemResponse response;
+    @NotNull public final BulkResponseItem response;
     public final boolean failed;
     @NotNull public final String id;
 
-    public BulkItemResponseToFailedFlag(@NotNull BulkItemResponse response, boolean failed) {
+    public BulkItemResponseToFailedFlag(@NotNull BulkResponseItem response, boolean failed) {
         this.response = response;
         this.failed = failed;
-        this.id = response.getId();
+        this.id = Objects.requireNonNull(response.id(), "BulkResponseItem id must not be null");
+    }
+
+    /** Returns the error cause, or {@code null} if the item did not fail. */
+    @Nullable
+    public ErrorCause getFailedCause() {
+        return response.error();
+    }
+
+    /** Returns a human-readable failure description, or {@code null} if the item did not fail. */
+    @Nullable
+    public String getFailure() {
+        ErrorCause error = response.error();
+        if (error == null) {
+            return null;
+        }
+        return error.reason() != null ? error.reason() : error.type();
+    }
+
+    public Integer getStatus() {
+        return response.status();
     }
 
     @Override
@@ -77,58 +93,5 @@ public final class BulkItemResponseToFailedFlag {
                 + id
                 + '\''
                 + '}';
-    }
-
-    public RestStatus status() {
-        return response.status();
-    }
-
-    public XContentBuilder toXContent(XContentBuilder builder, ToXContent.Params params)
-            throws IOException {
-        return response.toXContent(builder, params);
-    }
-
-    public int getItemId() {
-        return response.getItemId();
-    }
-
-    public DocWriteRequest.OpType getOpType() {
-        return response.getOpType();
-    }
-
-    public String getIndex() {
-        return response.getIndex();
-    }
-
-    public long getVersion() {
-        return response.getVersion();
-    }
-
-    public <T extends DocWriteResponse> T getResponse() {
-        return response.getResponse();
-    }
-
-    public boolean isFailed() {
-        return response.isFailed();
-    }
-
-    public String getFailureMessage() {
-        return response.getFailureMessage();
-    }
-
-    public BulkItemResponse.Failure getFailure() {
-        return response.getFailure();
-    }
-
-    public void writeTo(StreamOutput out) throws IOException {
-        response.writeTo(out);
-    }
-
-    public void writeThin(StreamOutput out) throws IOException {
-        response.writeThin(out);
-    }
-
-    public boolean isFragment() {
-        return response.isFragment();
     }
 }

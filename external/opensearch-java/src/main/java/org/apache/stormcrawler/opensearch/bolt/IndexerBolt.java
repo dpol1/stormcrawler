@@ -18,14 +18,13 @@
 package org.apache.stormcrawler.opensearch.bolt;
 
 import static org.apache.stormcrawler.Constants.StatusStreamName;
-import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -46,6 +45,7 @@ import org.apache.storm.tuple.Values;
 import org.apache.stormcrawler.Constants;
 import org.apache.stormcrawler.Metadata;
 import org.apache.stormcrawler.indexing.AbstractIndexerBolt;
+import org.apache.stormcrawler.opensearch.AsyncBulkProcessor;
 import org.apache.stormcrawler.opensearch.BulkItemResponseToFailedFlag;
 import org.apache.stormcrawler.opensearch.IndexCreation;
 import org.apache.stormcrawler.opensearch.OpenSearchConnection;
@@ -54,14 +54,9 @@ import org.apache.stormcrawler.util.ConfUtils;
 import org.apache.stormcrawler.util.PerSecondReducer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.opensearch.action.DocWriteRequest;
-import org.opensearch.action.bulk.BulkItemResponse;
-import org.opensearch.action.bulk.BulkProcessor;
-import org.opensearch.action.bulk.BulkRequest;
-import org.opensearch.action.bulk.BulkResponse;
-import org.opensearch.action.index.IndexRequest;
-import org.opensearch.core.rest.RestStatus;
-import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.client.opensearch.core.BulkRequest;
+import org.opensearch.client.opensearch.core.BulkResponse;
+import org.opensearch.client.opensearch.core.bulk.BulkOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,7 +65,7 @@ import org.slf4j.LoggerFactory;
  * &lt;String,Object&gt; from a named field.
  */
 public class IndexerBolt extends AbstractIndexerBolt
-        implements RemovalListener<String, List<Tuple>>, BulkProcessor.Listener {
+        implements RemovalListener<String, List<Tuple>>, AsyncBulkProcessor.Listener {
 
     private static final Logger LOG = LoggerFactory.getLogger(IndexerBolt.class);
 
@@ -203,19 +198,19 @@ public class IndexerBolt extends AbstractIndexerBolt
         final String docID = getDocumentID(metadata, normalisedurl);
 
         try {
-            final XContentBuilder builder = jsonBuilder().startObject();
+            final Map<String, Object> source = new HashMap<>();
 
             // display text of the document?
             if (StringUtils.isNotBlank(fieldNameForText())) {
                 final String text = trimText(tuple.getStringByField("text"));
                 if (!ignoreEmptyFields() || StringUtils.isNotBlank(text)) {
-                    builder.field(fieldNameForText(), trimText(text));
+                    source.put(fieldNameForText(), trimText(text));
                 }
             }
 
             // send URL as field?
             if (StringUtils.isNotBlank(fieldNameForURL())) {
-                builder.field(fieldNameForURL(), normalisedurl);
+                source.put(fieldNameForURL(), normalisedurl);
             }
 
             // which metadata to display?
@@ -225,29 +220,42 @@ public class IndexerBolt extends AbstractIndexerBolt
                 if (entry.getValue().length == 1) {
                     final String value = entry.getValue()[0];
                     if (!ignoreEmptyFields() || StringUtils.isNotBlank(value)) {
-                        builder.field(entry.getKey(), value);
+                        source.put(entry.getKey(), value);
                     }
                 } else if (entry.getValue().length > 1) {
-                    builder.array(entry.getKey(), entry.getValue());
+                    source.put(entry.getKey(), List.of(entry.getValue()));
                 }
             }
 
-            builder.endObject();
-
-            final IndexRequest indexRequest =
-                    new IndexRequest(getIndexName(metadata))
-                            .source(builder)
-                            .id(docID)
-                            .create(create);
-
-            if (pipeline != null) {
-                indexRequest.setPipeline(pipeline);
+            final String targetIndex = getIndexName(metadata);
+            final BulkOperation op;
+            if (create) {
+                op =
+                        BulkOperation.of(
+                                b ->
+                                        b.create(
+                                                c -> {
+                                                    c.index(targetIndex).id(docID).document(source);
+                                                    if (pipeline != null) {
+                                                        c.pipeline(pipeline);
+                                                    }
+                                                    return c;
+                                                }));
+            } else {
+                op =
+                        BulkOperation.of(
+                                b ->
+                                        b.index(
+                                                idx -> {
+                                                    idx.index(targetIndex)
+                                                            .id(docID)
+                                                            .document(source);
+                                                    if (pipeline != null) {
+                                                        idx.pipeline(pipeline);
+                                                    }
+                                                    return idx;
+                                                }));
             }
-
-            connection.addToProcessor(indexRequest);
-
-            eventCounter.scope("Indexed").incrBy(1);
-            perSecMetrics.scope("Indexed").update(1);
 
             waitAckLock.lock();
             try {
@@ -261,7 +269,12 @@ public class IndexerBolt extends AbstractIndexerBolt
             } finally {
                 waitAckLock.unlock();
             }
-        } catch (IOException e) {
+
+            connection.addToProcessor(op);
+
+            eventCounter.scope("Indexed").incrBy(1);
+            perSecMetrics.scope("Indexed").update(1);
+        } catch (Exception e) {
             LOG.error("Error building document for OpenSearch", e);
             // do not send to status stream so that it gets replayed
             _collector.fail(tuple);
@@ -291,17 +304,17 @@ public class IndexerBolt extends AbstractIndexerBolt
     @Override
     public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
         eventCounter.scope("bulks_received").incrBy(1);
-        eventCounter.scope("bulk_msec").incrBy(response.getTook().getMillis());
+        eventCounter.scope("bulk_msec").incrBy(response.took());
 
         var idsToBulkItemsWithFailedFlag =
-                Arrays.stream(response.getItems())
+                response.items().stream()
                         .map(
                                 bir -> {
-                                    String id = bir.getId();
-                                    BulkItemResponse.Failure f = bir.getFailure();
+                                    String id = bir.id();
+                                    var error = bir.error();
                                     boolean failed = false;
-                                    if (f != null) {
-                                        if (f.getStatus().equals(RestStatus.CONFLICT)) {
+                                    if (error != null) {
+                                        if (bir.status() == 409) {
                                             eventCounter.scope("doc_conflicts").incrBy(1);
                                             LOG.debug("Doc conflict ID {}", id);
                                         } else {
@@ -385,9 +398,8 @@ public class IndexerBolt extends AbstractIndexerBolt
                         var failure = selected.getFailure();
                         LOG.error("update ID {}, URL {}, failure: {}", id, url, failure);
                         // there is something wrong with the content we should
-                        // treat
-                        // it as an ERROR
-                        if (selected.getFailure().getStatus().equals(RestStatus.BAD_REQUEST)) {
+                        // treat it as an ERROR
+                        if (selected.getStatus() == 400) {
                             metadata.setValue(Constants.STATUS_ERROR_SOURCE, "OpenSearch indexing");
                             metadata.setValue(Constants.STATUS_ERROR_MESSAGE, "invalid content");
                             _collector.emit(
@@ -395,25 +407,9 @@ public class IndexerBolt extends AbstractIndexerBolt
                             _collector.ack(t);
                             LOG.debug("Acked {} with ID {}", url, id);
                         } else {
-                            LOG.error("update ID {}, URL {}, failure: {}", id, url, failure);
-                            // there is something wrong with the content we
-                            // should
-                            // treat
-                            // it as an ERROR
-                            if (failure.getStatus().equals(RestStatus.BAD_REQUEST)) {
-                                metadata.setValue(
-                                        Constants.STATUS_ERROR_SOURCE, "OpenSearch indexing");
-                                metadata.setValue(
-                                        Constants.STATUS_ERROR_MESSAGE, "invalid content");
-                                _collector.emit(
-                                        StatusStreamName,
-                                        t,
-                                        new Values(url, metadata, Status.ERROR));
-                                _collector.ack(t);
-                            } else {
-                                // otherwise just fail it
-                                _collector.fail(t);
-                            }
+                            // otherwise just fail it
+                            _collector.fail(t);
+                            LOG.debug("Failed {} with ID {}", url, id);
                         }
                     }
                 }
@@ -442,8 +438,9 @@ public class IndexerBolt extends AbstractIndexerBolt
         LOG.error("Exception with bulk {} - failing the whole lot ", executionId, failure);
 
         final var failedIds =
-                request.requests().stream()
-                        .map(DocWriteRequest::id)
+                request.operations().stream()
+                        .map(OpenSearchConnection::getBulkOperationId)
+                        .filter(Objects::nonNull)
                         .collect(Collectors.toUnmodifiableSet());
         Map<String, List<Tuple>> failedTupleLists;
         waitAckLock.lock();
