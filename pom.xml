@@ -559,7 +559,6 @@ under the License.
                                 <exclude>CONTRIBUTING.md</exclude>
                                 <exclude>RELEASING.md</exclude>
                                 <exclude>external/opensearch/dashboards/**</exclude>
-                                <exclude>external/opensearch-java/dashboards/**</exclude>
                                 <exclude>external/solr/archetype/src/main/resources/archetype-resources/configsets/**</exclude>
                                 <exclude>THIRD-PARTY.properties</exclude>
                                 <exclude>THIRD-PARTY.txt</exclude>
@@ -730,7 +729,6 @@ under the License.
         <module>external/warc</module>
         <module>archetype</module>
         <module>external/opensearch/archetype</module>
-        <module>external/opensearch-java/archetype</module>
         <module>external/solr/archetype</module>
         <module>docs</module>
     </modules>

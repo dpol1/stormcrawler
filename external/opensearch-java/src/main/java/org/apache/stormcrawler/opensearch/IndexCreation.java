@@ -21,12 +21,10 @@ import com.google.common.io.Resources;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import org.opensearch.client.Request;
-import org.opensearch.client.Response;
-import org.opensearch.client.RestClient;
 import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch.generic.Requests;
+import org.opensearch.client.opensearch.generic.Response;
 import org.opensearch.client.opensearch.indices.ExistsTemplateRequest;
-import org.opensearch.client.transport.rest_client.RestClientTransport;
 import org.slf4j.Logger;
 
 public class IndexCreation {
@@ -72,14 +70,17 @@ public class IndexCreation {
             final String jsonIndexConfiguration =
                     Resources.toString(mapping, StandardCharsets.UTF_8);
 
-            // Extract the low-level REST client to bypass typed builder limitations for raw JSON
-            RestClient restClient = ((RestClientTransport) client._transport()).restClient();
-            Request request = new Request("PUT", "/_template/" + templateName);
-            request.setJsonEntity(jsonIndexConfiguration);
-
-            Response response = restClient.performRequest(request);
-            int statusCode = response.getStatusLine().getStatusCode();
-            return statusCode == 200 || statusCode == 201;
+            try (Response response =
+                    client.generic()
+                            .execute(
+                                    Requests.builder()
+                                            .endpoint("/_template/" + templateName)
+                                            .method("PUT")
+                                            .json(jsonIndexConfiguration)
+                                            .build())) {
+                int statusCode = response.getStatus();
+                return statusCode == 200 || statusCode == 201;
+            }
         } catch (Exception e) {
             log.warn("template '{}' not created", templateName, e);
             return false;
@@ -96,14 +97,17 @@ public class IndexCreation {
             final String jsonIndexConfiguration =
                     Resources.toString(mapping, StandardCharsets.UTF_8);
 
-            // Extract the low-level REST client to bypass typed builder limitations for raw JSON
-            RestClient restClient = ((RestClientTransport) client._transport()).restClient();
-            Request request = new Request("PUT", "/" + indexName);
-            request.setJsonEntity(jsonIndexConfiguration);
-
-            Response response = restClient.performRequest(request);
-            int statusCode = response.getStatusLine().getStatusCode();
-            return statusCode == 200 || statusCode == 201;
+            try (Response response =
+                    client.generic()
+                            .execute(
+                                    Requests.builder()
+                                            .endpoint("/" + indexName)
+                                            .method("PUT")
+                                            .json(jsonIndexConfiguration)
+                                            .build())) {
+                int statusCode = response.getStatus();
+                return statusCode == 200 || statusCode == 201;
+            }
         } catch (Exception e) {
             log.warn("index '{}' not created", indexName, e);
             return false;

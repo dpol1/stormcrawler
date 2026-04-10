@@ -23,15 +23,28 @@ import org.jetbrains.annotations.Nullable;
 import org.opensearch.client.opensearch._types.ErrorCause;
 import org.opensearch.client.opensearch.core.bulk.BulkResponseItem;
 
-public final class BulkItemResponseToFailedFlag {
-    @NotNull public final BulkResponseItem response;
-    public final boolean failed;
-    @NotNull public final String id;
+/**
+ * Wraps a {@link BulkResponseItem} with a pre-computed failure flag. A 409 (conflict) is not
+ * considered a failure — it simply indicates a document already existed when using create mode.
+ *
+ * @param response the original bulk response item
+ * @param failed whether this item represents a real failure (excludes 409 conflicts)
+ * @param id the document id from the response item
+ */
+public record BulkItemResponseToFailedFlag(
+        @NotNull BulkResponseItem response, boolean failed, @NotNull String id) {
 
+    public BulkItemResponseToFailedFlag {
+        Objects.requireNonNull(response, "response");
+        Objects.requireNonNull(id, "id");
+    }
+
+    /** Constructs with id derived from the response item. */
     public BulkItemResponseToFailedFlag(@NotNull BulkResponseItem response, boolean failed) {
-        this.response = response;
-        this.failed = failed;
-        this.id = Objects.requireNonNull(response.id(), "BulkResponseItem id must not be null");
+        this(
+                response,
+                failed,
+                Objects.requireNonNull(response.id(), "BulkResponseItem id must not be null"));
     }
 
     /** Returns the error cause, or {@code null} if the item did not fail. */
@@ -50,48 +63,9 @@ public final class BulkItemResponseToFailedFlag {
         return error.reason() != null ? error.reason() : error.type();
     }
 
-    public Integer getStatus() {
+    // opensearch-java: status() returns int HTTP code, not RestStatus enum
+    /** Returns the HTTP status code of this response item. */
+    public int getStatus() {
         return response.status();
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (!(o instanceof BulkItemResponseToFailedFlag)) {
-            return false;
-        }
-
-        BulkItemResponseToFailedFlag that = (BulkItemResponseToFailedFlag) o;
-
-        if (failed != that.failed) {
-            return false;
-        }
-        if (!response.equals(that.response)) {
-            return false;
-        }
-        return id.equals(that.id);
-    }
-
-    @Override
-    public int hashCode() {
-        int result = response.hashCode();
-        result = 31 * result + (failed ? 1 : 0);
-        result = 31 * result + id.hashCode();
-        return result;
-    }
-
-    @Override
-    public String toString() {
-        return "BulkItemResponseToFailedFlag{"
-                + "response="
-                + response
-                + ", failed="
-                + failed
-                + ", id='"
-                + id
-                + '\''
-                + '}';
     }
 }

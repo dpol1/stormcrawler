@@ -142,7 +142,7 @@ public class HybridSpout extends AggregationSpout implements EmptyQueueListener 
         Object[] searchAfterValues = searchAfterCache.getIfPresent(queueName);
         if (searchAfterValues != null) {
             for (Object sav : searchAfterValues) {
-                requestBuilder.searchAfter(sav.toString());
+                requestBuilder.searchAfter(FieldValue.of(sav.toString()));
             }
         }
 

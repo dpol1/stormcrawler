@@ -32,7 +32,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.apache.http.HttpHost;
+import org.apache.hc.core5.http.HttpHost;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.tuple.Tuple;
 import org.apache.stormcrawler.Metadata;
@@ -46,11 +46,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.opensearch.client.RestClient;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.GetResponse;
-import org.opensearch.client.transport.rest_client.RestClientTransport;
+import org.opensearch.client.transport.OpenSearchTransport;
+import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,7 +62,7 @@ class StatusBoltTest extends AbstractOpenSearchTest {
 
     protected OpenSearchClient client;
 
-    private RestClient restClient;
+    private OpenSearchTransport transport;
 
     private static final Logger LOG = LoggerFactory.getLogger(StatusBoltTest.class);
 
@@ -82,14 +82,14 @@ class StatusBoltTest extends AbstractOpenSearchTest {
     @BeforeEach
     void setupStatusBolt() throws IOException {
         bolt = new StatusUpdaterBolt();
-        restClient =
-                RestClient.builder(
+        transport =
+                ApacheHttpClient5TransportBuilder.builder(
                                 new HttpHost(
+                                        "http",
                                         opensearchContainer.getHost(),
                                         opensearchContainer.getMappedPort(9200)))
+                        .setMapper(new JacksonJsonpMapper())
                         .build();
-        RestClientTransport transport =
-                new RestClientTransport(restClient, new JacksonJsonpMapper());
         client = new OpenSearchClient(transport);
         // configure the status updater bolt
         Map<String, Object> conf = new HashMap<>();
@@ -111,7 +111,7 @@ class StatusBoltTest extends AbstractOpenSearchTest {
         bolt.cleanup();
         output = null;
         try {
-            restClient.close();
+            transport.close();
         } catch (IOException e) {
         }
     }

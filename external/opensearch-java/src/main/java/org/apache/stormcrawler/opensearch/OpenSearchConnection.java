@@ -17,8 +17,8 @@
 
 package org.apache.stormcrawler.opensearch;
 
-import static org.opensearch.client.RestClientBuilder.DEFAULT_CONNECT_TIMEOUT_MILLIS;
-import static org.opensearch.client.RestClientBuilder.DEFAULT_SOCKET_TIMEOUT_MILLIS;
+import static org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder.DEFAULT_CONNECT_TIMEOUT_MILLIS;
+import static org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder.DEFAULT_RESPONSE_TIMEOUT_MILLIS;
 
 import java.io.IOException;
 import java.net.URI;
@@ -28,29 +28,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.net.ssl.SSLContext;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpHost;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.client.CredentialsProvider;
-import org.apache.http.conn.ssl.NoopHostnameVerifier;
-import org.apache.http.conn.ssl.TrustAllStrategy;
-import org.apache.http.impl.client.BasicCredentialsProvider;
-import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.reactor.ssl.TlsDetails;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
+import org.apache.hc.core5.util.Timeout;
 import org.apache.stormcrawler.util.ConfUtils;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.opensearch.client.HttpAsyncResponseConsumerFactory;
-import org.opensearch.client.Node;
-import org.opensearch.client.RequestOptions;
-import org.opensearch.client.RestClient;
-import org.opensearch.client.RestClientBuilder;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.bulk.BulkOperation;
-import org.opensearch.client.sniff.Sniffer;
-import org.opensearch.client.transport.rest_client.RestClientOptions;
-import org.opensearch.client.transport.rest_client.RestClientTransport;
+import org.opensearch.client.transport.OpenSearchTransport;
+import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,19 +62,15 @@ public final class OpenSearchConnection {
 
     @NotNull private final AsyncBulkProcessor processor;
 
-    @Nullable private final Sniffer sniffer;
-
-    @NotNull private final RestClient restClient;
+    @NotNull private final OpenSearchTransport transport;
 
     private OpenSearchConnection(
             @NotNull OpenSearchClient c,
             @NotNull AsyncBulkProcessor p,
-            @Nullable Sniffer s,
-            @NotNull RestClient rc) {
+            @NotNull OpenSearchTransport t) {
         client = c;
         processor = p;
-        sniffer = s;
-        restClient = rc;
+        transport = t;
     }
 
     public OpenSearchClient getClient() {
@@ -90,7 +83,7 @@ public final class OpenSearchConnection {
      * client's transport via {@code client._transport().close()}.
      */
     public static OpenSearchClient getClient(Map<String, Object> stormConf, String boltType) {
-        return buildClientResources(stormConf, boltType, 100).client();
+        return buildClientResources(stormConf, boltType).client();
     }
 
     /** Adds a single bulk operation to the internal processor. */
@@ -130,11 +123,7 @@ public final class OpenSearchConnection {
 
         final String dottedType = boltType + ".";
 
-        final int bufferSize =
-                ConfUtils.getInt(
-                        stormConf, Constants.PARAMPREFIX, dottedType, "responseBufferSize", 100);
-
-        ClientResources cr = buildClientResources(stormConf, boltType, bufferSize);
+        ClientResources cr = buildClientResources(stormConf, boltType);
 
         final String flushIntervalString =
                 ConfUtils.getString(
@@ -150,7 +139,6 @@ public final class OpenSearchConnection {
                         stormConf, Constants.PARAMPREFIX, dottedType, "concurrentRequests", 1);
 
         AsyncBulkProcessor bulkProcessor = null;
-        Sniffer sniffer = null;
         try {
             bulkProcessor =
                     new AsyncBulkProcessor.Builder(cr.client(), listener)
@@ -159,14 +147,7 @@ public final class OpenSearchConnection {
                             .setConcurrentRequests(concurrentRequests)
                             .build();
 
-            boolean sniff =
-                    ConfUtils.getBoolean(
-                            stormConf, Constants.PARAMPREFIX, dottedType, "sniff", true);
-            if (sniff) {
-                sniffer = Sniffer.builder(cr.restClient()).build();
-            }
-
-            return new OpenSearchConnection(cr.client(), bulkProcessor, sniffer, cr.restClient());
+            return new OpenSearchConnection(cr.client(), bulkProcessor, cr.transport());
         } catch (Exception e) {
             if (bulkProcessor != null) {
                 try {
@@ -176,7 +157,7 @@ public final class OpenSearchConnection {
                 }
             }
             try {
-                cr.restClient().close();
+                cr.transport().close();
             } catch (IOException suppressed) {
                 e.addSuppressed(suppressed);
             }
@@ -206,15 +187,11 @@ public final class OpenSearchConnection {
             throw new RuntimeException(e);
         }
 
-        if (sniffer != null) {
-            sniffer.close();
-        }
-
-        // Now close the REST client (also closes the transport)
+        // Now close the transport (also shuts down the underlying HTTP client)
         try {
-            restClient.close();
+            transport.close();
         } catch (IOException e) {
-            LOG.trace("Client threw IO exception.");
+            LOG.trace("Transport threw IO exception on close.");
         }
     }
 
@@ -239,10 +216,10 @@ public final class OpenSearchConnection {
     }
 
     // internal helpers
-    private record ClientResources(OpenSearchClient client, RestClient restClient) {}
+    private record ClientResources(OpenSearchClient client, OpenSearchTransport transport) {}
 
     private static ClientResources buildClientResources(
-            Map<String, Object> stormConf, String boltType, int responseBufferSizeMB) {
+            Map<String, Object> stormConf, String boltType) {
 
         final String dottedType = boltType + ".";
 
@@ -278,10 +255,15 @@ public final class OpenSearchConnection {
             if (uri.getScheme() != null) {
                 scheme = uri.getScheme();
             }
-            hosts.add(new HttpHost(uri.getHost(), port, scheme));
+            // HC5: constructor is (scheme, hostname, port) — not (hostname, port, scheme)
+            hosts.add(new HttpHost(scheme, uri.getHost(), port));
         }
 
-        final RestClientBuilder builder = RestClient.builder(hosts.toArray(new HttpHost[0]));
+        LOG.info(
+                "OpenSearch {} transport configured with {} host(s): {}",
+                boltType,
+                hosts.size(),
+                hosts);
 
         // authentication via user / password
         final String user =
@@ -306,36 +288,7 @@ public final class OpenSearchConnection {
         final boolean needsUser = StringUtils.isNotBlank(user) && StringUtils.isNotBlank(password);
         final boolean needsProxy = StringUtils.isNotBlank(proxyhost) && proxyport != -1;
 
-        if (needsUser || needsProxy || disableTlsValidation) {
-            builder.setHttpClientConfigCallback(
-                    httpClientBuilder -> {
-                        if (needsUser) {
-                            final CredentialsProvider credentialsProvider =
-                                    new BasicCredentialsProvider();
-                            credentialsProvider.setCredentials(
-                                    AuthScope.ANY, new UsernamePasswordCredentials(user, password));
-                            httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
-                        }
-                        if (needsProxy) {
-                            httpClientBuilder.setProxy(
-                                    new HttpHost(proxyhost, proxyport, proxyscheme));
-                        }
-
-                        if (disableTlsValidation) {
-                            try {
-                                final SSLContextBuilder sslContext = new SSLContextBuilder();
-                                sslContext.loadTrustMaterial(null, new TrustAllStrategy());
-                                httpClientBuilder.setSSLContext(sslContext.build());
-                                httpClientBuilder.setSSLHostnameVerifier(
-                                        NoopHostnameVerifier.INSTANCE);
-                            } catch (Exception e) {
-                                throw new RuntimeException("Failed to disable TLS validation", e);
-                            }
-                        }
-                        return httpClientBuilder;
-                    });
-        }
-
+        // Defaults from ApacheHttpClient5TransportBuilder (same as the former RestClientBuilder)
         final int connectTimeout =
                 ConfUtils.getInt(
                         stormConf,
@@ -349,88 +302,91 @@ public final class OpenSearchConnection {
                         Constants.PARAMPREFIX,
                         dottedType,
                         "socket.timeout",
-                        DEFAULT_SOCKET_TIMEOUT_MILLIS);
-        // timeout until connection is established
-        builder.setRequestConfigCallback(
-                requestConfigBuilder ->
-                        requestConfigBuilder
-                                .setConnectTimeout(connectTimeout)
-                                // Timeout when waiting for data
-                                .setSocketTimeout(socketTimeout));
-
-        // TODO check if this has gone somewhere else
-        // int maxRetryTimeout = ConfUtils.getInt(stormConf, Constants.PARAMPREFIX +
-        // boltType +
-        // ".max.retry.timeout",
-        // DEFAULT_MAX_RETRY_TIMEOUT_MILLIS);
-        // builder.setMaxRetryTimeoutMillis(maxRetryTimeout);
-
-        // TODO configure headers etc...
-        // Map<String, String> configSettings = (Map) stormConf
-        // .get(Constants.PARAMPREFIX + boltType + ".settings");
-        // if (configSettings != null) {
-        // configSettings.forEach((k, v) -> settings.put(k, v));
-        // }
-
-        // use node selector only to log nodes listed in the config
-        // and/or discovered through sniffing
-        builder.setNodeSelector(
-                nodes -> {
-                    for (Node node : nodes) {
-                        LOG.debug(
-                                "Connected to OpenSearch node {} [{}] for {}",
-                                node.getName(),
-                                node.getHost(),
-                                boltType);
-                    }
-                });
+                        DEFAULT_RESPONSE_TIMEOUT_MILLIS);
 
         final boolean compression =
                 ConfUtils.getBoolean(
                         stormConf, Constants.PARAMPREFIX, dottedType, "compression", false);
 
+        final ApacheHttpClient5TransportBuilder builder =
+                ApacheHttpClient5TransportBuilder.builder(hosts.toArray(new HttpHost[0]))
+                        .setMapper(new JacksonJsonpMapper());
+
+        // Timeouts via ConnectionConfig on the builder's internal connection manager
+        builder.setConnectionConfigCallback(
+                connConfigBuilder ->
+                        connConfigBuilder
+                                .setConnectTimeout(Timeout.ofMilliseconds(connectTimeout))
+                                .setSocketTimeout(Timeout.ofMilliseconds(socketTimeout)));
+
+        // Auth, proxy, and/or trust-all SSL via HttpClient customisation
+        if (needsUser || needsProxy || disableTlsValidation) {
+            builder.setHttpClientConfigCallback(
+                    httpClientBuilder -> {
+                        // hc.client5 auth: password is char[], AuthScope(host, port)
+                        if (needsUser) {
+                            final BasicCredentialsProvider credentialsProvider =
+                                    new BasicCredentialsProvider();
+                            credentialsProvider.setCredentials(
+                                    new AuthScope(null, -1),
+                                    new UsernamePasswordCredentials(user, password.toCharArray()));
+                            httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
+                        }
+                        // hc.client5 proxy: HttpHost(scheme, host, port)
+                        if (needsProxy) {
+                            httpClientBuilder.setProxy(
+                                    new HttpHost(proxyscheme, proxyhost, proxyport));
+                        }
+                        // Custom connection manager overrides the builder's internal one,
+                        // so timeouts and TlsDetailsFactory must be replicated here
+                        if (disableTlsValidation) {
+                            try {
+                                final SSLContext sslContext =
+                                        SSLContextBuilder.create()
+                                                .loadTrustMaterial((chain, authType) -> true)
+                                                .build();
+                                httpClientBuilder.setConnectionManager(
+                                        PoolingAsyncClientConnectionManagerBuilder.create()
+                                                .setTlsStrategy(
+                                                        ClientTlsStrategyBuilder.create()
+                                                                .setSslContext(sslContext)
+                                                                .setHostnameVerifier(
+                                                                        NoopHostnameVerifier
+                                                                                .INSTANCE)
+                                                                // HTTP/2 ALPN negotiation
+                                                                .setTlsDetailsFactory(
+                                                                        sslEngine ->
+                                                                                new TlsDetails(
+                                                                                        sslEngine
+                                                                                                .getSession(),
+                                                                                        sslEngine
+                                                                                                .getApplicationProtocol()))
+                                                                .build())
+                                                .setDefaultConnectionConfig(
+                                                        ConnectionConfig.custom()
+                                                                .setConnectTimeout(
+                                                                        Timeout.ofMilliseconds(
+                                                                                connectTimeout))
+                                                                .setSocketTimeout(
+                                                                        Timeout.ofMilliseconds(
+                                                                                socketTimeout))
+                                                                .build())
+                                                .build());
+                            } catch (Exception e) {
+                                throw new RuntimeException("Failed to disable TLS validation", e);
+                            }
+                        }
+                        return httpClientBuilder;
+                    });
+        }
+
+        // Compression: first-class builder method, not a request interceptor
         builder.setCompressionEnabled(compression);
 
-        final RestClient restClient = builder.build();
-
-        // --- Response buffer size configuration ---
-        // The default HeapBufferedResponseConsumerFactory in the low-level REST client has
-        // a hardcoded limit of 100 MB. Large MSearch or aggregation responses can exceed
-        // this, causing ContentTooLongException.
-        //
-        // This fix works because we use RestClientTransport, which passes RequestOptions
-        // (including HttpAsyncResponseConsumerFactory) directly to the low-level RestClient.
-        //
-        // NOTE: if StormCrawler ever switches to ApacheHttpClient5Transport, this approach
-        // will silently stop working. In that case, use:
-        //   ApacheHttpClient5Options.DEFAULT.toBuilder()
-        //       .setHttpAsyncResponseConsumerFactory(factory).build()
-        // See: https://github.com/opensearch-project/opensearch-java/issues/1370
-        final int DEFAULT_RESPONSE_BUFFER_SIZE_MB = 100;
-        final int effectiveBufferSizeMB;
-        if (responseBufferSizeMB <= 0) {
-            LOG.warn(
-                    "Invalid responseBufferSize {}MB for {}, falling back to default {}MB",
-                    responseBufferSizeMB,
-                    boltType,
-                    DEFAULT_RESPONSE_BUFFER_SIZE_MB);
-            effectiveBufferSizeMB = DEFAULT_RESPONSE_BUFFER_SIZE_MB;
-        } else {
-            effectiveBufferSizeMB = responseBufferSizeMB;
-        }
-        LOG.info("OpenSearch response buffer size for {}: {}MB", boltType, effectiveBufferSizeMB);
-
-        final RequestOptions.Builder optionsBuilder = RequestOptions.DEFAULT.toBuilder();
-        optionsBuilder.setHttpAsyncResponseConsumerFactory(
-                new HttpAsyncResponseConsumerFactory.HeapBufferedResponseConsumerFactory(
-                        effectiveBufferSizeMB * 1024 * 1024));
-        final RestClientOptions transportOptions = new RestClientOptions(optionsBuilder.build());
-
-        final RestClientTransport transport =
-                new RestClientTransport(restClient, new JacksonJsonpMapper(), transportOptions);
+        final OpenSearchTransport transport = builder.build();
         final OpenSearchClient openSearchClient = new OpenSearchClient(transport);
 
-        return new ClientResources(openSearchClient, restClient);
+        return new ClientResources(openSearchClient, transport);
     }
 
     /**
