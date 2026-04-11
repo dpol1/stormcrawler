@@ -123,6 +123,8 @@ public final class OpenSearchConnection {
 
         final String dottedType = boltType + ".";
 
+        warnOnRemovedKeys(stormConf, dottedType);
+
         ClientResources cr = buildClientResources(stormConf, boltType);
 
         final String flushIntervalString =
@@ -217,6 +219,34 @@ public final class OpenSearchConnection {
 
     // internal helpers
     private record ClientResources(OpenSearchClient client, OpenSearchTransport transport) {}
+
+    /**
+     * Logs a WARN for legacy configuration keys that are no longer honoured by this module, so that
+     * users migrating from {@code external/opensearch} notice silently-dropped tuning. See the
+     * module README for the full list of differences.
+     */
+    private static void warnOnRemovedKeys(Map<String, Object> stormConf, String dottedType) {
+        final String responseBufferKey = Constants.PARAMPREFIX + dottedType + "responseBufferSize";
+        if (stormConf.containsKey(responseBufferKey)) {
+            LOG.warn(
+                    "Configuration key '{}' is set but no longer supported by the opensearch-java module. "
+                            + "The HC5-based async transport does not expose an equivalent per-request "
+                            + "heap-buffer override. The setting is ignored — remove it from your "
+                            + "configuration. See external/opensearch-java/README.md for details.",
+                    responseBufferKey);
+        }
+
+        final String sniffKey = Constants.PARAMPREFIX + dottedType + "sniff";
+        if (stormConf.containsKey(sniffKey)) {
+            LOG.warn(
+                    "Configuration key '{}' is set but no longer supported by the opensearch-java module. "
+                            + "The OpenSearch Java Client 3.x does not ship a Sniffer equivalent, so "
+                            + "automatic node discovery is not available. Keep the 'addresses' list up to "
+                            + "date manually or put a load balancer in front of the cluster. "
+                            + "See external/opensearch-java/README.md for details.",
+                    sniffKey);
+        }
+    }
 
     private static ClientResources buildClientResources(
             Map<String, Object> stormConf, String boltType) {

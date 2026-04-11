@@ -45,3 +45,30 @@ For a ready-to-use crawler configuration, example Flux topologies, index
 initialization scripts and OpenSearch Dashboards exports, refer to the
 [`external/opensearch`](../opensearch) module: all of those resources are
 compatible with this module and have not been duplicated here.
+
+Differences from the legacy `external/opensearch` module
+---------------------
+
+* `opensearch.<bolt>.responseBufferSize` is no longer supported. The legacy
+  module used the HC4-based low-level REST client and set a heap response
+  buffer via `HeapBufferedResponseConsumerFactory`. The HC5-based async
+  transport used here does not expose an equivalent per-request override, so
+  the key is ignored. A `WARN` is logged at startup if it is found in the
+  configuration; remove it when migrating.
+* `opensearch.<bolt>.sniff` is no longer supported. The legacy module enabled
+  node auto-discovery by default via the low-level REST client `Sniffer`. The
+  OpenSearch Java Client 3.x does not ship a sniffer equivalent, so this
+  feature is dropped. Keep the `addresses` list up to date manually or put a
+  load balancer in front of the cluster. A `WARN` is logged at startup if the
+  key is found in the configuration; remove it when migrating.
+* Date fields (`nextFetchDate` in the status index and `timestamp` in the
+  metrics index) are serialized as ISO-8601 strings produced by
+  `Instant#toString()` (for example `2026-01-01T00:00:00Z`). The legacy module
+  serializes the same fields through `XContentBuilder#timeField`, which emits
+  ISO-8601 strings via `ISODateTimeFormat.dateTime()` (for example
+  `2026-01-01T00:00:00.000Z`). Both representations are accepted by the
+  default OpenSearch `date` mapping and by the `date_optional_time` /
+  `strict_date_optional_time` formats used in the example mappings under
+  `src/test/resources/`. If you run a custom mapping that restricts the field
+  `format` to `epoch_millis`, update it to accept ISO-8601 (for example
+  `strict_date_optional_time||epoch_millis`) before writing with this module.
