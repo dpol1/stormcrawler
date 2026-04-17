@@ -221,8 +221,7 @@ public class HybridSpout extends AggregationSpout implements EmptyQueueListener 
                 Map<String, Object> fieldSource = source;
                 if (pfield.startsWith("metadata.")) {
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> metadataMap =
-                            (Map<String, Object>) source.get("metadata");
+                    Map<String, Object> metadataMap = (Map<String, Object>) source.get("metadata");
                     fieldSource = metadataMap;
                     pfield = pfield.substring(9);
                 }

@@ -38,10 +38,10 @@ import org.opensearch.client.json.jackson.JacksonJsonpMapper;
  * <p>Regression coverage for the {@code ClassCastException: JsonStringImpl cannot be cast to
  * String} that was thrown by {@link AggregationSpout} and {@link HybridSpout} when the previous
  * implementation called {@code hit.source().to(Object.class)}: in the OpenSearch Java client,
- * {@code Object.class} is bound to a built-in {@code jsonValueDeserializer} that returns the
- * raw Jakarta JSON-P {@code JsonValue} tree (Parsson types) instead of going through the
- * configured Jackson mapper. The fix routes deserialisation through {@code Map.class}, which
- * correctly falls through to {@link JacksonJsonpMapper} and yields native Java types.
+ * {@code Object.class} is bound to a built-in {@code jsonValueDeserializer} that returns the raw
+ * Jakarta JSON-P {@code JsonValue} tree (Parsson types) instead of going through the configured
+ * Jackson mapper. The fix routes deserialisation through {@code Map.class}, which correctly falls
+ * through to {@link JacksonJsonpMapper} and yields native Java types.
  */
 class AbstractSpoutTest {
 

@@ -107,8 +107,8 @@ public abstract class AbstractSpout extends AbstractQueryingSpout {
      * Single-threaded executor dedicated to running the asynchronous OpenSearch queries triggered
      * from this spout. Using a dedicated, named, daemon executor avoids polluting the JVM-wide
      * {@link java.util.concurrent.ForkJoinPool#commonPool() common pool} (which is shared with all
-     * other Storm tasks running in the same worker) and allows clean shutdown when the topology
-     * is stopped.
+     * other Storm tasks running in the same worker) and allows clean shutdown when the topology is
+     * stopped.
      */
     protected ExecutorService queryExecutor;
 
@@ -219,20 +219,20 @@ public abstract class AbstractSpout extends AbstractQueryingSpout {
      * }
      * }</pre>
      *
-     * <p>When {@link JsonData} is produced via {@code JsonData._DESERIALIZER} (as opposed to a
-     * raw Jackson {@code TreeNode}), its internal {@code value} is a Jakarta JSON-P
-     * {@code JsonObject} — typically a Parsson {@code JsonObjectImpl}. Crucially,
-     * {@code jakarta.json.JsonObject extends Map<String, JsonValue>}, so calling
-     * {@code source.to(Map.class)} or {@code source.to(Object.class)} matches the
-     * {@code isAssignableFrom} guard and returns the raw {@code JsonObject} <em>without ever
-     * consulting the configured {@link org.opensearch.client.json.jackson.JacksonJsonpMapper}</em>.
-     * The resulting map values are still {@code JsonString}/{@code JsonStringImpl} instances and
-     * any downstream {@code (String) value} cast blows up with a {@link ClassCastException}.
+     * <p>When {@link JsonData} is produced via {@code JsonData._DESERIALIZER} (as opposed to a raw
+     * Jackson {@code TreeNode}), its internal {@code value} is a Jakarta JSON-P {@code JsonObject}
+     * — typically a Parsson {@code JsonObjectImpl}. Crucially, {@code jakarta.json.JsonObject
+     * extends Map<String, JsonValue>}, so calling {@code source.to(Map.class)} or {@code
+     * source.to(Object.class)} matches the {@code isAssignableFrom} guard and returns the raw
+     * {@code JsonObject} <em>without ever consulting the configured {@link
+     * org.opensearch.client.json.jackson.JacksonJsonpMapper}</em>. The resulting map values are
+     * still {@code JsonString}/{@code JsonStringImpl} instances and any downstream {@code (String)
+     * value} cast blows up with a {@link ClassCastException}.
      *
      * <p>Passing a concrete subclass that {@code JsonObject} does <em>not</em> implement (here
-     * {@link LinkedHashMap}) bypasses the short-circuit and forces the round-trip through
-     * {@code JacksonJsonpGenerator -> JacksonJsonpParser -> Jackson ObjectMapper.readValue},
-     * which yields native Java values (String, Long, Double, ArrayList, LinkedHashMap…).
+     * {@link LinkedHashMap}) bypasses the short-circuit and forces the round-trip through {@code
+     * JacksonJsonpGenerator -> JacksonJsonpParser -> Jackson ObjectMapper.readValue}, which yields
+     * native Java values (String, Long, Double, ArrayList, LinkedHashMap…).
      *
      * @param source the document source carried by an OpenSearch hit; may be {@code null}
      * @return a (possibly empty) map of native Java values, never {@code null}
