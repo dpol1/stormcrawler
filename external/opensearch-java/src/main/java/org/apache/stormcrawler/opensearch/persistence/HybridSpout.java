@@ -163,7 +163,8 @@ public class HybridSpout extends AggregationSpout implements EmptyQueueListener 
                             } catch (IOException e) {
                                 throw new CompletionException(e);
                             }
-                        })
+                        },
+                        queryExecutor)
                 .thenAccept(hrl::handleResponse)
                 .exceptionally(
                         e -> {
@@ -214,16 +215,14 @@ public class HybridSpout extends AggregationSpout implements EmptyQueueListener 
             for (Hit<JsonData> hit : hits) {
                 numDocs++;
 
-                @SuppressWarnings("unchecked")
-                Map<String, Object> sourceAsMap =
-                        (Map<String, Object>) hit.source().to(Object.class);
+                Map<String, Object> source = sourceAsMap(hit.source());
 
                 String pfield = partitionField;
-                Map<String, Object> fieldSource = sourceAsMap;
+                Map<String, Object> fieldSource = source;
                 if (pfield.startsWith("metadata.")) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> metadataMap =
-                            (Map<String, Object>) sourceAsMap.get("metadata");
+                            (Map<String, Object>) source.get("metadata");
                     fieldSource = metadataMap;
                     pfield = pfield.substring(9);
                 }
@@ -239,7 +238,7 @@ public class HybridSpout extends AggregationSpout implements EmptyQueueListener 
                 }
 
                 sortValues = hit.sort().toArray();
-                if (!addHitToBuffer(sourceAsMap)) {
+                if (!addHitToBuffer(source)) {
                     alreadyprocessed++;
                 }
             }

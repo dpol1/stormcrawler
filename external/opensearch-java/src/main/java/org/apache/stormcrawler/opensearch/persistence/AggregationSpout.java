@@ -226,7 +226,8 @@ public class AggregationSpout extends AbstractSpout {
                             } catch (IOException e) {
                                 throw new CompletionException(e);
                             }
-                        })
+                        },
+                        queryExecutor)
                 .thenAccept(this::handleResponse)
                 .exceptionally(
                         e -> {
@@ -288,8 +289,7 @@ public class AggregationSpout extends AbstractSpout {
             TopHitsAggregate topHits = entry.aggregations().get("docs").topHits();
             for (Hit<JsonData> hit : topHits.hits().hits()) {
 
-                @SuppressWarnings("unchecked")
-                Map<String, Object> keyValues = (Map<String, Object>) hit.source().to(Object.class);
+                Map<String, Object> keyValues = sourceAsMap(hit.source());
 
                 LOG.debug("{} -> id [{}], _source [{}]", logIdprefix, hit.id(), keyValues);
 
